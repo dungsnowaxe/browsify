@@ -89,14 +89,31 @@
   }
 
   // Capture any messages buffered by the WKUserScript stub before Svelte loaded.
-  const _preloadQueue: any[] = window.finicky._queue ?? [];
+  const _preloadQueue: any[] = window.finicky?._queue ?? [];
 
-  // Replace the stub with the real implementation.
+  // Replace the stub with the real implementation (supports both WKWebView and on-demand localhost HTTP bridge).
   window.finicky = {
     sendMessage: (msg: any) => {
-      window.webkit?.messageHandlers?.finicky?.postMessage(
-        JSON.stringify(msg)
-      );
+      if (window.webkit?.messageHandlers?.finicky) {
+        window.webkit.messageHandlers.finicky.postMessage(
+          JSON.stringify(msg)
+        );
+      } else {
+        fetch("/api/rpc", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(msg),
+        })
+          .then((res) => res.json())
+          .then((replies) => {
+            if (Array.isArray(replies)) {
+              for (const r of replies) handleMessage(r);
+            } else if (replies) {
+              handleMessage(replies);
+            }
+          })
+          .catch((err) => console.error("Browsify RPC error:", err));
+      }
     },
     receiveMessage: handleMessage,
   };
@@ -106,7 +123,10 @@
     handleMessage(msg);
   }
 
-  // Request rules file info on startup so the footer badge appears immediately.
+  // Request initial state, rules file info, and browsers on startup.
+  if (!window.webkit?.messageHandlers?.finicky) {
+    window.finicky.sendMessage({ type: "getInitState" });
+  }
   window.finicky.sendMessage({ type: "getRules" });
   window.finicky.sendMessage({ type: "getInstalledBrowsers" });
 </script>
