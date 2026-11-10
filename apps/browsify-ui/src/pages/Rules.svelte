@@ -10,12 +10,12 @@
     rulesFile = { defaultBrowser: "", rules: [] },
     installedBrowsers = [],
     profilesByBrowser = {},
-    isJSConfig = false,
+    hasPrimaryConfig = false,
   }: {
     rulesFile: RulesFile;
     installedBrowsers: string[];
     profilesByBrowser: Record<string, string[]>;
-    isJSConfig: boolean;
+    hasPrimaryConfig: boolean;
   } = $props();
 
   const SAVE_DEBOUNCE = 3000;
@@ -195,7 +195,7 @@
 
 <PageContainer title="Rules">
   {#snippet description()}
-    {#if isJSConfig}
+    {#if hasPrimaryConfig}
       The first matching rule wins. <span style="color: var(--accent-color)">JS config is active</span> — its handlers run first and take priority over these rules.
     {:else}
       The first matching rule wins. Use <code>*</code> as a wildcard, e.g. <code>*example.com/*</code>.

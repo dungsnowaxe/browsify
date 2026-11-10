@@ -2,6 +2,7 @@ mod config_loader;
 mod launcher;
 mod macos;
 mod ui_server;
+mod update;
 
 use browsify_core::{OpenerInfo, ProfileResolver, BROWSERS_REGISTRY};
 use config_loader::{migrate_config, BrowsifyEngine, MigrateTarget};
@@ -248,6 +249,7 @@ fn main() {
                     bundle_id: opener_bundle_id.unwrap_or_default(),
                     path: String::new(),
                     window_title: None,
+                    pid: 0,
                 })
             } else {
                 None

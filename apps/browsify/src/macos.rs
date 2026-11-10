@@ -1,25 +1,19 @@
 use crate::config_loader::BrowsifyEngine;
 use crate::launcher::execute_launch_plan;
 use crate::ui_server::{
-    is_ui_server_active, log_event, notify_config_reloaded, record_routed_url, set_update_info,
-    UpdateInfo,
+    is_ui_server_active, log_event, notify_config_reloaded, record_routed_url, LogLevel,
 };
-#[allow(dead_code)]
-use browsify_core::ResolvedLaunchPlan;
-use browsify_core::{
-    AppType, ModifierKeys, OpenerInfo, PowerInfo, ProfileResolver, SystemInfo,
-};
+use browsify_core::{AppType, ModifierKeys, OpenerInfo, PowerInfo, ProfileResolver, SystemInfo};
 use browsify_js::{register_host_callbacks, HostQueryCallbacks};
-use serde::{Deserialize, Serialize};
-use std::fs::{self, DirBuilder, File, OpenOptions};
+use std::fs::{DirBuilder, File, OpenOptions};
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 use url::Url;
 
-#[allow(dead_code)]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub const BROWSIFY_BUNDLE_ID: &str = "com.lavenxsnow.browsify";
 
 static LAST_DAEMON_ACTIVITY: OnceLock<Mutex<Instant>> = OnceLock::new();
@@ -41,25 +35,45 @@ fn daemon_idle_elapsed() -> Duration {
 
 /// Converts a local filesystem path to a percent-encoded `file://` URL
 /// (ensuring characters like `#`, `?`, and spaces are properly escaped).
-#[allow(dead_code)]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub fn file_path_to_url(path_str: &str) -> Result<String, String> {
     Url::from_file_path(path_str)
         .map(|u| u.into())
         .map_err(|()| format!("Invalid file path for file URL: {}", path_str))
 }
 
-/// Initializes lazy OS host callbacks for QuickJS and registers the native macOS short-URL resolver.
+/// Posts a macOS user notification for `finicky.notify(title, subtitle)`
+/// (invoked lazily from QuickJS via `__browsifyHostNotify`).
+pub fn post_notification(title: &str, subtitle: &str) {
+    #[cfg(target_os = "macos")]
+    {
+        let escape = |s: &str| format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""));
+        let script = format!(
+            "display notification {} with title {}",
+            escape(subtitle),
+            escape(title)
+        );
+        let _ = std::process::Command::new("osascript")
+            .arg("-e")
+            .arg(&script)
+            .spawn();
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (title, subtitle);
+    }
+}
+
+/// Initializes lazy OS host callbacks for QuickJS.
 pub fn init_host_hooks() {
     register_host_callbacks(HostQueryCallbacks {
         get_modifier_keys: current_modifier_keys,
         get_system_info: current_system_info,
         get_power_info: current_power_info,
         is_app_running,
+        notify: post_notification,
+        get_window_title: lookup_window_title,
     });
-    #[cfg(target_os = "macos")]
-    {
-        browsify_core::set_custom_short_url_resolver(macos_impl::nsurl_resolve_short_url);
-    }
 }
 
 /// Acquires an exclusive non-blocking `flock` in `/tmp/browsify-startup-<uid>/startup.lock`
@@ -210,6 +224,20 @@ pub fn set_as_default_browser() -> bool {
     }
 }
 
+/// Lazily reads an opener's focused window title via the macOS AX API
+/// (invoked from QuickJS only when a JS callback actually reads `options.opener.windowTitle`).
+pub fn lookup_window_title(pid: i32) -> Option<String> {
+    #[cfg(target_os = "macos")]
+    {
+        macos_impl::lookup_window_title_ax(pid)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = pid;
+        None
+    }
+}
+
 /// Activates a running browser application across macOS Spaces after profile helper handoff.
 pub fn activate_running_browser(app_type: AppType, browser_name: &str) {
     #[cfg(target_os = "macos")]
@@ -220,47 +248,6 @@ pub fn activate_running_browser(app_type: AppType, browser_name: &str) {
     {
         let _ = (app_type, browser_name);
     }
-}
-
-/// Launches a URL directly via `NSWorkspace` when no custom CLI arguments or new instance are required.
-#[cfg(target_os = "macos")]
-pub fn launch_url_via_nsworkspace(plan: &ResolvedLaunchPlan) -> bool {
-    macos_impl::launch_url_direct(plan)
-}
-
-/// Checks or updates the GitHub Releases update status whenever configuration is loaded or updated.
-pub fn trigger_update_check_if_enabled(
-    engine: &Arc<Mutex<BrowsifyEngine>>,
-    home_dir: &Path,
-) {
-    let check_enabled = engine
-        .lock()
-        .map(|e| e.summary().options.check_for_updates)
-        .unwrap_or(false);
-    if !check_enabled {
-        set_update_info(UpdateInfo {
-            version: String::new(),
-            has_update: false,
-            update_check_enabled: false,
-            download_url: String::new(),
-            release_url: String::new(),
-        });
-        return;
-    }
-    let home = home_dir.to_path_buf();
-    thread::spawn(move || {
-        if let Some(info) = check_github_releases(&home) {
-            set_update_info(info);
-        } else {
-            set_update_info(UpdateInfo {
-                version: format!("v{}", env!("CARGO_PKG_VERSION")),
-                has_update: false,
-                update_check_enabled: true,
-                download_url: String::new(),
-                release_url: String::new(),
-            });
-        }
-    });
 }
 
 /// Starts the background config hot-reload watcher and optional GitHub Releases update checker,
@@ -298,26 +285,22 @@ pub fn run_daemon(
                 if let Ok(mut eng) = engine.lock() {
                     match eng.reload() {
                         Ok(()) => {
-                            log_event("info", "Configuration hot-reloaded from disk");
+                            log_event(LogLevel::Info, "Configuration hot-reloaded from disk");
                             notify_config_reloaded(&eng);
-                            #[cfg(target_os = "macos")]
-                            macos_impl::set_status_item_error(false);
                         }
                         Err(err) => {
-                            log_event("error", format!("Config reload failed: {}", err));
-                            #[cfg(target_os = "macos")]
-                            macos_impl::set_status_item_error(true);
+                            log_event(LogLevel::Error, format!("Config reload failed: {}", err));
                         }
                     }
                 }
-                trigger_update_check_if_enabled(&engine, &home_dir);
+                crate::update::trigger_update_check_if_enabled(&engine, &home_dir);
             }
 
             if !keep_running
                 && !is_ui_server_active()
                 && daemon_idle_elapsed() >= Duration::from_secs(2)
             {
-                log_event("info", "Exiting daemon (keepRunning is false and idle timeout elapsed)");
+                log_event(LogLevel::Info, "Exiting daemon (keepRunning is false and idle timeout elapsed)");
                 #[cfg(target_os = "macos")]
                 macos_impl::terminate_nsapp();
                 #[cfg(not(target_os = "macos"))]
@@ -327,13 +310,13 @@ pub fn run_daemon(
     }
 
     // 2. Periodic 24-hour GitHub Releases Update Scheduler (respects dynamic config changes)
-    trigger_update_check_if_enabled(&engine, &home_dir);
+    crate::update::trigger_update_check_if_enabled(&engine, &home_dir);
     {
         let engine = Arc::clone(&engine);
         let home_dir = home_dir.clone();
         thread::spawn(move || loop {
             thread::sleep(Duration::from_secs(86_400));
-            trigger_update_check_if_enabled(&engine, &home_dir);
+            crate::update::trigger_update_check_if_enabled(&engine, &home_dir);
         });
     }
 
@@ -360,77 +343,8 @@ pub fn run_daemon(
     }
 }
 
-#[derive(Serialize, Deserialize)]
-struct CachedUpdateCheck {
-    timestamp_secs: u64,
-    update_info: UpdateInfo,
-}
-
-fn check_github_releases(home_dir: &Path) -> Option<UpdateInfo> {
-    let cache_dir = home_dir.join("Library/Caches/Browsify");
-    let cache_file = cache_dir.join("last_update_check.json");
-    let now_secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-
-    if let Ok(bytes) = fs::read(&cache_file) {
-        if let Ok(cached) = serde_json::from_slice::<CachedUpdateCheck>(&bytes) {
-            if now_secs.saturating_sub(cached.timestamp_secs) < 86_400 {
-                return Some(cached.update_info);
-            }
-        }
-    }
-
-    let output = std::process::Command::new("curl")
-        .args([
-            "-fsSL",
-            "--max-time",
-            "3",
-            "-H",
-            "Accept: application/vnd.github+json",
-            "-A",
-            &format!("Browsify/{}", env!("CARGO_PKG_VERSION")),
-            "https://api.github.com/repos/snowaxe/browsify/releases/latest",
-        ])
-        .output()
-        .ok()?;
-
-    if !output.status.success() {
-        return None;
-    }
-
-    let json: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
-    let tag_name = json.get("tag_name")?.as_str()?.trim_start_matches('v');
-    let html_url = json
-        .get("html_url")
-        .and_then(|v| v.as_str())
-        .unwrap_or("https://github.com/snowaxe/browsify/releases")
-        .to_string();
-    let current = env!("CARGO_PKG_VERSION").trim_start_matches('v');
-    let has_update = tag_name != current && !tag_name.is_empty();
-
-    let info = UpdateInfo {
-        version: format!("v{}", tag_name),
-        has_update,
-        update_check_enabled: true,
-        download_url: html_url.clone(),
-        release_url: html_url,
-    };
-
-    let _ = fs::create_dir_all(&cache_dir);
-    if let Ok(serialized) = serde_json::to_vec(&CachedUpdateCheck {
-        timestamp_secs: now_secs,
-        update_info: info.clone(),
-    }) {
-        let _ = fs::write(&cache_file, serialized);
-    }
-
-    Some(info)
-}
-
 /// Routes a URL received by the daemon (via `kAEGetURL`, `openFile:`, Handoff, or SSO).
-#[allow(dead_code)]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub fn handle_daemon_url_event(
     engine: &Arc<Mutex<BrowsifyEngine>>,
     resolver: &Arc<ProfileResolver>,
@@ -440,7 +354,7 @@ pub fn handle_daemon_url_event(
     dry_run: bool,
 ) {
     touch_daemon_activity();
-    log_event("info", format!("Routing URL: {}", raw_url));
+    log_event(LogLevel::Info, format!("Routing URL: {}", raw_url));
     let (resolved_res, missing_policy) = {
         let Ok(eng) = engine.lock() else {
             return;
@@ -455,22 +369,15 @@ pub fn handle_daemon_url_event(
         Ok(cfg) => {
             let plan = resolver.build_launch_plan(&cfg, open_in_background, missing_policy);
             if let Some(ref w) = plan.warning {
-                log_event("warn", w.clone());
+                log_event(LogLevel::Warn, w.clone());
             }
             record_routed_url(raw_url, &plan.final_url, &plan.browser_name, &cfg.profile);
             if let Err(err) = execute_launch_plan(&plan, dry_run) {
-                log_event("error", err);
-                #[cfg(target_os = "macos")]
-                macos_impl::set_status_item_error(true);
-            } else {
-                #[cfg(target_os = "macos")]
-                macos_impl::set_status_item_error(false);
+                log_event(LogLevel::Error, err);
             }
         }
         Err(err) => {
-            log_event("error", format!("Failed evaluating URL: {}", err));
-            #[cfg(target_os = "macos")]
-            macos_impl::set_status_item_error(true);
+            log_event(LogLevel::Error, format!("Failed evaluating URL: {}", err));
         }
     }
 }
@@ -564,11 +471,6 @@ mod macos_impl {
 
     pub fn terminate_nsapp() {
         std::process::exit(0);
-    }
-
-    pub fn nsurl_resolve_short_url(original_url: &str) -> Option<String> {
-        let _ = original_url;
-        None
     }
 
     pub fn read_power_info_iokit() -> PowerInfo {
@@ -748,10 +650,6 @@ mod macos_impl {
         }
     }
 
-    pub fn launch_url_direct(_plan: &ResolvedLaunchPlan) -> bool {
-        false
-    }
-
     pub fn check_is_default_browser() -> bool {
         unsafe {
             let ws_fn: unsafe extern "C" fn(Class, Sel) -> Id =
@@ -824,9 +722,7 @@ mod macos_impl {
         }
     }
 
-    pub fn set_status_item_error(_has_error: bool) {}
-
-    fn lookup_window_title_ax(pid: i32) -> Option<String> {
+    pub fn lookup_window_title_ax(pid: i32) -> Option<String> {
         unsafe {
             let app_el = AXUIElementCreateApplication(pid);
             if app_el.is_null() {
@@ -890,10 +786,12 @@ mod macos_impl {
                 0
             };
 
-            let uses_win_title = ctx
+            // Native `opener_window_title` matchers need the title eagerly; dynamic
+            // JS callbacks fetch it lazily via `__browsifyHostGetWindowTitle` instead.
+            let needs_native_title = ctx
                 .engine
                 .lock()
-                .map(|e| e.uses_window_title())
+                .map(|e| e.summary().uses_window_title)
                 .unwrap_or(false);
 
             let opener = if pid > 0 {
@@ -915,7 +813,7 @@ mod macos_impl {
                     } else {
                         String::new()
                     };
-                    let window_title = if uses_win_title {
+                    let window_title = if needs_native_title {
                         lookup_window_title_ax(pid)
                     } else {
                         None
@@ -925,6 +823,7 @@ mod macos_impl {
                         bundle_id,
                         path,
                         window_title,
+                        pid,
                     })
                 } else {
                     None
@@ -1034,15 +933,15 @@ mod macos_impl {
             if let Ok(mut eng) = ctx.engine.lock() {
                 match eng.reload() {
                     Ok(()) => {
-                        log_event("info", "Configuration reloaded via menu bar");
+                        log_event(LogLevel::Info, "Configuration reloaded via menu bar");
                         notify_config_reloaded(&eng);
                     }
                     Err(e) => {
-                        log_event("error", format!("Reload error: {}", e));
+                        log_event(LogLevel::Error, format!("Reload error: {}", e));
                     }
                 }
             }
-            trigger_update_check_if_enabled(&ctx.engine, ctx.resolver.home_dir());
+            crate::update::trigger_update_check_if_enabled(&ctx.engine, ctx.resolver.home_dir());
             rebuild_status_menu();
         }
     }

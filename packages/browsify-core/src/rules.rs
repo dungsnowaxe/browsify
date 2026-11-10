@@ -1,4 +1,4 @@
-use crate::browser::{autodetect_app_string_type, BrowserConfig};
+use crate::browser::{autodetect_app_string_type, BrowserConfig, ProfileSelector};
 use crate::profile::MissingProfilePolicy;
 use serde::de::Deserializer;
 use serde::ser::Serializer;
@@ -238,10 +238,8 @@ impl TomlBrowserSpec {
         });
         let (profile, container) = if self.container.is_some() {
             (self.profile.clone(), self.container.clone())
-        } else if let Some(c) = self.profile.strip_prefix("container:") {
-            (String::new(), (!c.is_empty()).then(|| c.to_string()))
         } else {
-            (self.profile.clone(), None)
+            ProfileSelector::parse(&self.profile).split_owned()
         };
         BrowserConfig {
             name: self.name.clone(),

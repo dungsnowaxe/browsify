@@ -1,16 +1,11 @@
 #!/bin/bash
 set -e
 
+# Unsigned personal build. Signing + notarization are intentionally deferred until
+# a Developer ID certificate is configured; re-add codesign/gon steps then.
 ./scripts/build.sh
 mkdir -p dist
-
-if [[ -n "$CODESIGN_IDENTITY" ]]; then
-  codesign --deep --force --options runtime \
-    --sign "$CODESIGN_IDENTITY" \
-    ./apps/browsify/build/Browsify.app
-fi
-
-if [[ -f .env ]]; then
-  export $(cat .env | xargs)
-fi
-gon scripts/gon-config.json
+cd apps/browsify/build
+tar -czf ../../dist/Browsify-universal.tar.gz Browsify.app
+echo "release: unsigned bundle at apps/browsify/build/Browsify.app"
+echo "release: archived to dist/Browsify-universal.tar.gz"

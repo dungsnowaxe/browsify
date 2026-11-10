@@ -42,8 +42,8 @@ pub fn format_open_command(plan: &ResolvedLaunchPlan) -> String {
     parts.join(" ")
 }
 
-/// Executes a [`ResolvedLaunchPlan`] using native `NSWorkspace` / LaunchServices on macOS
-/// and post-handoff `NSRunningApplication` activation (fixing Finicky Issues #501 & #550).
+/// Executes a [`ResolvedLaunchPlan`] via the macOS `open` command (LaunchServices)
+/// with post-handoff `NSRunningApplication` activation (fixing Finicky Issues #501 & #550).
 pub fn execute_launch_plan(plan: &ResolvedLaunchPlan, dry_run: bool) -> Result<(), String> {
     if let Some(warn) = &plan.warning {
         eprintln!("browsify warning: {}", warn);
@@ -56,13 +56,6 @@ pub fn execute_launch_plan(plan: &ResolvedLaunchPlan, dry_run: bool) -> Result<(
     if dry_run {
         println!("{}", format_open_command(plan));
         return Ok(());
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        if !plan.creates_new_instance && crate::macos::launch_url_via_nsworkspace(plan) {
-            return Ok(());
-        }
     }
 
     let mut open_args = Vec::new();

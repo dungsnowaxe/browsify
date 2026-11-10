@@ -1,17 +1,13 @@
 use std::collections::VecDeque;
 use std::io::{Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
-use std::process::Command;
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 use url::Url;
 
 const MAX_SHORT_URL_CACHE_ENTRIES: usize = 256;
 
-type CustomResolverFn = fn(&str) -> Option<String>;
-
 static SHORT_URL_CACHE: OnceLock<Mutex<VecDeque<(String, String)>>> = OnceLock::new();
-static CUSTOM_RESOLVER: OnceLock<CustomResolverFn> = OnceLock::new();
 
 pub const SHORTENER_DOMAINS: &[&str] = &[
     "adf.ly",
@@ -53,11 +49,6 @@ pub const SHORTENER_DOMAINS: &[&str] = &[
     "yourls.org",
     "zpr.io",
 ];
-
-/// Registers a platform-native in-process redirect resolver (e.g., `NSURLSession` on macOS).
-pub fn set_custom_short_url_resolver(resolver: CustomResolverFn) {
-    let _ = CUSTOM_RESOLVER.set(resolver);
-}
 
 fn cache_lookup(url: &str) -> Option<String> {
     let cache = SHORT_URL_CACHE.get_or_init(|| Mutex::new(VecDeque::new()));
@@ -103,9 +94,11 @@ pub fn is_short_url(url_str: &str, extra_domains: &[String]) -> bool {
         || extra_domains.iter().any(|d| matches_domain(d))
 }
 
-/// Resolves a shortened URL by consulting the 256-entry LRU cache first, then following up to
-/// 3 HTTP redirects with a 750ms timeout via the platform's native resolver (`NSURLSession` on macOS).
-/// Falls back to `original_url` on any network error or if the domain is not a known shortener.
+/// Resolves a shortened URL by consulting the 256-entry LRU cache first, then following
+/// up to 3 plain-HTTP (`http://`) redirects in-process with a 750 ms per-hop timeout.
+/// HTTPS shorteners are returned unresolved (a native `NSURLSession` HTTPS expander is
+/// planned for macOS). Falls back to `original_url` on any network error or if the
+/// domain is not a known shortener.
 pub fn resolve_short_url(original_url: &str, extra_domains: &[String]) -> String {
     if !is_short_url(original_url, extra_domains) {
         return original_url.to_string();
@@ -113,15 +106,6 @@ pub fn resolve_short_url(original_url: &str, extra_domains: &[String]) -> String
 
     if let Some(cached) = cache_lookup(original_url) {
         return cached;
-    }
-
-    if let Some(custom_fn) = CUSTOM_RESOLVER.get() {
-        if let Some(resolved) = custom_fn(original_url) {
-            if !resolved.is_empty() && Url::parse(&resolved).is_ok() {
-                cache_insert(original_url.to_string(), resolved.clone());
-                return resolved;
-            }
-        }
     }
 
     // In-process plain HTTP redirect follower for `http://` URLs
@@ -132,33 +116,6 @@ pub fn resolve_short_url(original_url: &str, extra_domains: &[String]) -> String
         }
     }
 
-    // Fallback for HTTPS on non-macOS platforms without NSURLSession
-    let output = Command::new("curl")
-        .args([
-            "-sIL",
-            "--max-redirs",
-            "3",
-            "--max-time",
-            "0.75",
-            "-A",
-            "Browsify/0.1",
-            "-o",
-            "/dev/null",
-            "-w",
-            "%{url_effective}",
-            original_url,
-        ])
-        .output();
-
-    if let Ok(out) = output {
-        if out.status.success() {
-            let resolved = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            if !resolved.is_empty() && Url::parse(&resolved).is_ok() {
-                cache_insert(original_url.to_string(), resolved.clone());
-                return resolved;
-            }
-        }
-    }
     original_url.to_string()
 }
 

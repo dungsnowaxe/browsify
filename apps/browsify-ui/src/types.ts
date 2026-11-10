@@ -56,7 +56,6 @@ export interface UpdateInfo {
 
 export interface ConfigInfo {
   configPath: string;
-  isJSConfig?: boolean;
   hasPrimaryConfig?: boolean;
   explicitDefaultBrowser?: boolean;
   pureNativeFastPath?: boolean;

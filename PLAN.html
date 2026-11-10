@@ -594,7 +594,7 @@
 │   │       ├── rules.rs              # UI Rules File (rules.json) &amp; Primary Config (config.toml) serde
 │   │       ├── profile.rs            # ProfileResolver, Profile Selector resolution, LaunchPlan builder
 │   │       ├── sqlite_profiles.rs    # Zero-C-dep SQLite B-tree reader for Firefox 136+ Profile Groups
-│   │       ├── shorturl.rs           # 256-entry LRU cache + macOS NSURLSession / bounded redirect expander
+│   │       ├── shorturl.rs           # 256-entry LRU cache + bounded in-process HTTP redirect expander (macOS NSURLSession HTTPS expander planned)
 │   │       └── migrate.rs            # Declarative config.toml exporter
 │   │
 │   └── browsify-js/                  # rquickjs runtime, safe marker lowering, &amp; ordered hybrid pipeline
@@ -706,7 +706,7 @@
         <ul>
           <li><strong>Lazy Accessibility</strong>: Queries <code>AXUIElementCopyAttributeValue</code> for <code>opener.windowTitle</code> <em>only</em> when <code>uses_window_title == true</code> on the active config.</li>
           <li><strong>Lazy Host Callbacks</strong>: <code>getModifierKeys()</code> (CoreGraphics), <code>getPowerInfo()</code> (IOKit), <code>getSystemInfo()</code>, and <code>isAppRunning()</code> execute on-demand when invoked by JS.</li>
-          <li><strong>Short-URL Expansion</strong>: Uses macOS <code>NSURLSession</code> (750 ms timeout, max 3 redirects, 0 KB TLS binary bloat) + a 256-entry LRU cache.</li>
+          <li><strong>Short-URL Expansion</strong>: Follows up to 3 plain-HTTP redirects in-process (750 ms per-hop timeout, zero TLS binary bloat) with a 256-entry LRU cache; HTTPS shorteners pass through unresolved until the native macOS <code>NSURLSession</code> expander lands.</li>
         </ul>
       </div>
       <div class="subbox">
@@ -740,6 +740,11 @@
       <div class="subbox">
         <h4>Zero Telemetry &amp; Update Check Policy</h4>
         <ul>
+          <li><strong>Module Formats</strong>: ES Module <code>export default { ... }</code>, CommonJS <code>module.exports = { ... }</code>, and TypeScript type annotations (<code>import type ...</code>, <code>url: URL</code>, <code>satisfies FinickyConfig</code>).</li>
+          <li><strong>URL Objects</strong>: Full WHATWG <code>URL</code> + <code>URLSearchParams</code> + <code>FinickyURL</code> with legacy v3 getters (<code>url.urlString</code>, <code>url.url</code> returning <code>{protocol, username, password, host, port, pathname, search, hash}</code>, and <code>url.opener</code>).</li>
+          <li><strong><code>finicky.*</code> Global Utilities</strong>:
+            <code>finicky.matchHostnames(...)</code>, <code>finicky.matchDomains(...)</code>, <code>finicky.getModifierKeys()</code>, <code>finicky.getSystemInfo()</code>, <code>finicky.getPowerInfo()</code>, <code>finicky.isAppRunning(id)</code>, and <code>finicky.notify(title, subtitle)</code>.</li>
+          <li><strong>Browser Extension Protocol</strong>: Handles both <code>finicky://open/&lt;base64&gt;</code> and <code>browsify://open/&lt;base64&gt;</code> so existing Chrome/Firefox Finicky extensions work without modification.</li>
           <li>Legacy Finicky's custom <code>API_HOST</code> telemetry/update endpoint is completely removed.</li>
           <li><code>check_for_updates</code> defaults to <strong><code>false</code></strong> so Browsify makes zero background network requests unless explicitly opted in.</li>
           <li>When <code>check_for_updates = true</code>, Browsify queries GitHub Releases (<code>https://api.github.com/repos/snowaxe/browsify/releases/latest</code>) at most once per 24 hours, caching the result in <code>~/Library/Caches/Browsify/last_update_check.json</code>.</li>
@@ -790,7 +795,7 @@
         <ul>
           <li>Remove sunsetted Arc Space fields (<code>space</code>, <code>arc_space</code>, <code>list_arc_spaces</code>) from <code>browsify-core</code> and <code>browsify-js</code>.</li>
           <li>Add <code>profile: "container:&lt;Name&gt;"</code> parsing in <code>ProfileResolver</code> so <code>rules.json</code> and UI rules can target Firefox Containers.</li>
-          <li>Add 256-entry LRU cache + macOS <code>NSURLSession</code> redirect resolver in <code>shorturl.rs</code>.</li>
+          <li>Add 256-entry LRU cache + bounded in-process HTTP redirect resolver in <code>shorturl.rs</code> (native macOS <code>NSURLSession</code> HTTPS expander tracked as a follow-up).</li>
           <li>Replace <code>fn.toString()</code> regex sniffing in <code>browsify-js</code> with safe helper markers (<code>matchHostnames</code>, <code>matchDomains</code>, <code>stripParams</code>, <code>matchOpener</code>, <code>forceHttps</code>, <code>replaceHost</code>).</li>
           <li>Implement ordered interleaved <code>Vec&lt;HybridRewrite&gt;</code> &amp; <code>Vec&lt;HybridHandler&gt;</code> pipeline preserving <code>options.originalUrl</code>, Rust-backed WHATWG <code>URL</code> parsing, lazy host callbacks, and <code>uses_window_title</code> detection.</li>
           <li>Default <code>check_for_updates</code> to <code>false</code> and support inheriting unset <code>defaultBrowser</code>/<code>options</code> from <code>rules.json</code>.</li>

@@ -168,7 +168,7 @@
               {rulesFile}
               {installedBrowsers}
               {profilesByBrowser}
-              isJSConfig={config.isJSConfig ?? false}
+              hasPrimaryConfig={config.hasPrimaryConfig ?? false}
             />
           </Route>
 
@@ -187,7 +187,7 @@
           </Route>
 
           <Route path="/rules">
-            <Rules {rulesFile} {installedBrowsers} {profilesByBrowser} isJSConfig={config.isJSConfig ?? false} />
+            <Rules {rulesFile} {installedBrowsers} {profilesByBrowser} hasPrimaryConfig={config.hasPrimaryConfig ?? false} />
           </Route>
         </div>
       </div>

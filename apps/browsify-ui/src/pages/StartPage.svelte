@@ -20,7 +20,7 @@
   export let config: ConfigInfo;
   export let updateInfo: UpdateInfo | null;
   export let rulesFile: RulesFile;
-  export let isJSConfig: boolean;
+  export let hasPrimaryConfig: boolean;
   export let installedBrowsers: string[] = [];
   export let profilesByBrowser: Record<string, string[]> = {};
 
@@ -35,7 +35,7 @@
 
   const SAFARI = "Safari";
 
-  let defaultBrowser = isJSConfig ? (config.defaultBrowser ?? "") : (rulesFile.defaultBrowser || SAFARI);
+  let defaultBrowser = hasPrimaryConfig ? (config.defaultBrowser ?? "") : (rulesFile.defaultBrowser || SAFARI);
   let defaultProfile = rulesFile.defaultProfile ?? "";
   let defaultBrowserIsCustom = false;
   let defaultProfileIsCustom = false;
@@ -47,7 +47,7 @@
     hideIcon = rulesFile.options?.hideIcon ?? config.options?.hideIcon ?? false;
     logRequests = rulesFile.options?.logRequests ?? config.options?.logRequests ?? false;
     checkForUpdates = rulesFile.options?.checkForUpdates ?? config.options?.checkForUpdates ?? false;
-    defaultBrowser = isJSConfig ? (config.defaultBrowser ?? "") : (rulesFile.defaultBrowser || SAFARI);
+    defaultBrowser = hasPrimaryConfig ? (config.defaultBrowser ?? "") : (rulesFile.defaultBrowser || SAFARI);
     defaultProfile = rulesFile.defaultProfile ?? "";
   }
   // Separate statements so browser/profile list updates only affect these derived
@@ -56,7 +56,7 @@
   $: defaultProfileIsCustom = defaultProfile !== "" && !(profilesByBrowser[defaultBrowser] ?? []).includes(defaultProfile);
 
   function save() {
-    if (isJSConfig) return;
+    if (hasPrimaryConfig) return;
     clearTimeout(saveTimer);
     window.finicky.sendMessage({
       type: "saveRules",
@@ -70,7 +70,7 @@
   }
 
   function scheduleSave() {
-    if (isJSConfig) return;
+    if (hasPrimaryConfig) return;
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
       window.finicky.sendMessage({
@@ -110,10 +110,10 @@
   {/if}
 
   <!-- Default browser -->
-  <div class="section" class:readonly={isJSConfig}>
+  <div class="section" class:readonly={hasPrimaryConfig}>
     <div class="section-header">
       <span class="section-label">Default browser</span>
-      {#if isJSConfig}
+      {#if hasPrimaryConfig}
         <Tooltip text="JS config is active — these settings can't be changed here">
           <span class="lock-inline"><LockIcon /></span>
         </Tooltip>
@@ -128,7 +128,7 @@
       isProfileCustom={defaultProfileIsCustom}
       {installedBrowsers}
       {profilesByBrowser}
-      disabled={isJSConfig}
+      disabled={hasPrimaryConfig}
       browserPlaceholder="System default"
       onBrowserChange={(browser, profile, isCustom) => {
         defaultBrowser = browser;
@@ -152,7 +152,7 @@
         label="Keep running"
         hint="App stays open in the background"
         bind:checked={keepRunning}
-        locked={isJSConfig}
+        locked={hasPrimaryConfig}
         onLockedClick={onLockedClick}
         onchange={scheduleSave}
       />
@@ -160,7 +160,7 @@
         label="Hide icon"
         hint="Hide menu bar icon"
         bind:checked={hideIcon}
-        locked={isJSConfig}
+        locked={hasPrimaryConfig}
         onLockedClick={onLockedClick}
         onchange={scheduleSave}
       />
@@ -168,7 +168,7 @@
         label="Log requests"
         hint="Log all URL handling to file"
         bind:checked={logRequests}
-        locked={isJSConfig}
+        locked={hasPrimaryConfig}
         onLockedClick={onLockedClick}
         onchange={scheduleSave}
       />
@@ -176,7 +176,7 @@
         label="Check for updates"
         hint="Automatically check for new versions"
         bind:checked={checkForUpdates}
-        locked={isJSConfig}
+        locked={hasPrimaryConfig}
         onLockedClick={onLockedClick}
         onchange={scheduleSave}
       />

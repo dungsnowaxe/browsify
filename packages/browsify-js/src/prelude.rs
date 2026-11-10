@@ -477,8 +477,12 @@ globalThis.finicky = {
     }
     return false;
   },
-  notify: (_title, _subtitle) => {
-    console.error("finicky.notify is unavailable. Use console.log, console.warn or console.error instead.");
+  notify: (title, subtitle) => {
+    if (typeof globalThis.__browsifyHostNotify === "function") {
+      globalThis.__browsifyHostNotify(String(title ?? ""), String(subtitle ?? ""));
+      return undefined;
+    }
+    console.warn("finicky.notify is unavailable on this platform.");
     return undefined;
   },
 };
@@ -582,7 +586,7 @@ function rewriteUrlJS(rewrite, url, options) {
 function resolveBrowserSpecJS(spec, url, options) {
   const resolved = typeof spec === "function" ? spec(url, options) : spec;
   if (resolved === undefined) {
-    throw new Error("Browser config cannot be undefined");
+    throw new Error("Browser target cannot be undefined");
   }
   if (resolved === null) {
     return {
@@ -630,7 +634,7 @@ function resolveBrowserSpecJS(spec, url, options) {
       url: url.href,
     };
   }
-  throw new Error("Invalid browser specification");
+  throw new Error("Invalid browser target");
 }
 
 globalThis.__browsifyInspectConfig = function () {
@@ -752,6 +756,7 @@ globalThis.__browsifyInspectConfig = function () {
   }
 
   const opts = cfg.options || {};
+
   return JSON.stringify({
     allStatic,
     defaultBrowser: defBrowser,
@@ -766,12 +771,38 @@ globalThis.__browsifyInspectConfig = function () {
   });
 };
 
+function withLazyWindowTitle(opener) {
+  // Replace the plain `windowTitle` field with a lazy getter that queries the host
+  // (macOS AX API) only if a callback actually reads it — including deep inside
+  // conditionals — so no load-time probing or source sniffing is ever needed.
+  if (
+    opener &&
+    typeof opener.pid === "number" &&
+    opener.pid > 0 &&
+    typeof globalThis.__browsifyHostGetWindowTitle === "function"
+  ) {
+    let cached;
+    Object.defineProperty(opener, "windowTitle", {
+      configurable: true,
+      enumerable: true,
+      get() {
+        if (cached === undefined) {
+          const title = globalThis.__browsifyHostGetWindowTitle(opener.pid);
+          cached = title ? String(title) : null;
+        }
+        return cached;
+      },
+    });
+  }
+  return opener;
+}
+
 globalThis.__browsifyEvalRewriteStep = function (index, currentUrlStr, originalUrlStr, openerJson) {
   const cfg = globalThis.__browsifyActiveConfig;
   const rw = cfg?.rewrite?.[index];
   if (!rw) return currentUrlStr;
 
-  const opener = openerJson ? JSON.parse(openerJson) : null;
+  const opener = openerJson ? withLazyWindowTitle(JSON.parse(openerJson)) : null;
   const url = new FinickyURL(currentUrlStr, opener);
   const options = {
     opener,
@@ -790,7 +821,7 @@ globalThis.__browsifyEvalHandlerStep = function (index, currentUrlStr, originalU
   const h = cfg?.handlers?.[index];
   if (!h) return "";
 
-  const opener = openerJson ? JSON.parse(openerJson) : null;
+  const opener = openerJson ? withLazyWindowTitle(JSON.parse(openerJson)) : null;
   const url = new FinickyURL(currentUrlStr, opener);
   const options = {
     opener,
@@ -805,7 +836,7 @@ globalThis.__browsifyEvalHandlerStep = function (index, currentUrlStr, originalU
 
 globalThis.__browsifyEvalDefaultBrowser = function (currentUrlStr, originalUrlStr, openerJson) {
   const cfg = globalThis.__browsifyActiveConfig;
-  const opener = openerJson ? JSON.parse(openerJson) : null;
+  const opener = openerJson ? withLazyWindowTitle(JSON.parse(openerJson)) : null;
   const url = new FinickyURL(currentUrlStr, opener);
   const options = {
     opener,

@@ -1,4 +1,4 @@
-use crate::browser::BrowserConfig;
+use crate::browser::{BrowserConfig, ProfileSelector};
 use crate::profile::MissingProfilePolicy;
 use crate::rules::{Rule, RulesFile, TomlBrowserTarget, TomlConfig};
 use crate::wildcard::{compile_wildcard, match_wildcard};
@@ -194,6 +194,83 @@ pub struct ConfigOptions {
     pub on_missing_profile: MissingProfilePolicy,
 }
 
+/// Which [`ConfigOptions`] were explicitly set by the Primary Config;
+/// the UI Rules File only fills in the rest.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ExplicitOptions {
+    pub keep_running: bool,
+    pub hide_icon: bool,
+    pub log_requests: bool,
+    pub check_for_updates: bool,
+}
+
+impl ExplicitOptions {
+    pub const NONE: Self = Self {
+        keep_running: false,
+        hide_icon: false,
+        log_requests: false,
+        check_for_updates: false,
+    };
+
+    pub const ALL: Self = Self {
+        keep_running: true,
+        hide_icon: true,
+        log_requests: true,
+        check_for_updates: true,
+    };
+}
+
+/// Inherits `options` from the UI Rules File (`rules.json`) for every option the
+/// Primary Config left unset.
+pub fn inherit_rules_file_options(
+    options: &mut ConfigOptions,
+    rf: &RulesFile,
+    explicit: ExplicitOptions,
+) {
+    let Some(opts) = &rf.options else {
+        return;
+    };
+    if !explicit.keep_running {
+        if let Some(v) = opts.keep_running {
+            options.keep_running = v;
+        }
+    }
+    if !explicit.hide_icon {
+        if let Some(v) = opts.hide_icon {
+            options.hide_icon = v;
+        }
+    }
+    if !explicit.log_requests {
+        if let Some(v) = opts.log_requests {
+            options.log_requests = v;
+        }
+    }
+    if !explicit.check_for_updates {
+        if let Some(v) = opts.check_for_updates {
+            options.check_for_updates = v;
+        }
+    }
+}
+
+/// Resolves the UI Rules File's `defaultBrowser`/`defaultProfile` pair into a
+/// [Browser Target](../../../GLOSSARY.md), or `None` when no default is set.
+pub fn rules_file_default_browser(rf: &RulesFile) -> Option<BrowserConfig> {
+    if rf.default_browser.is_empty() {
+        return None;
+    }
+    let mut db = BrowserConfig::from_spec_str(&rf.default_browser, "");
+    if !rf.default_profile.is_empty() {
+        match ProfileSelector::parse(&rf.default_profile) {
+            ProfileSelector::Container(c) => {
+                db.container = (!c.is_empty()).then(|| c.to_string());
+                db.profile.clear();
+            }
+            ProfileSelector::Profile(p) => db.profile = p.to_string(),
+        }
+    }
+    Some(db)
+}
+
 impl Default for ConfigOptions {
     fn default() -> Self {
         Self {
@@ -242,35 +319,19 @@ impl NativeRouter {
 
     pub fn from_rules_file(rf: &RulesFile) -> Self {
         let has_explicit_default_browser = !rf.default_browser.is_empty();
-        let mut default_browser = if rf.default_browser.is_empty() {
-            BrowserConfig::safari_default("", false)
-        } else {
-            BrowserConfig::from_spec_str(&rf.default_browser, "")
-        };
-        if !rf.default_profile.is_empty() {
-            if let Some(c) = rf.default_profile.strip_prefix("container:") {
-                default_browser.container = (!c.is_empty()).then(|| c.to_string());
-                default_browser.profile.clear();
-            } else {
-                default_browser.profile = rf.default_profile.clone();
+        let mut default_browser = rules_file_default_browser(rf)
+            .unwrap_or_else(|| BrowserConfig::safari_default("", false));
+        // `defaultProfile` also applies to the Safari fallback when no default browser is set.
+        if rf.default_browser.is_empty() && !rf.default_profile.is_empty() {
+            let (profile, container) = ProfileSelector::parse(&rf.default_profile).split_owned();
+            default_browser.profile = profile;
+            if let Some(c) = container {
+                default_browser.container = Some(c);
             }
         }
 
         let mut options = ConfigOptions::default();
-        if let Some(opts) = &rf.options {
-            if let Some(v) = opts.keep_running {
-                options.keep_running = v;
-            }
-            if let Some(v) = opts.hide_icon {
-                options.hide_icon = v;
-            }
-            if let Some(v) = opts.log_requests {
-                options.log_requests = v;
-            }
-            if let Some(v) = opts.check_for_updates {
-                options.check_for_updates = v;
-            }
-        }
+        inherit_rules_file_options(&mut options, rf, ExplicitOptions::NONE);
 
         let handlers = compile_json_rules(&rf.rules);
         Self {
@@ -416,49 +477,14 @@ impl NativeRouter {
     }
 
     /// Applies `rules.json` handlers and inherits `defaultBrowser`/`options` when not explicitly set by the Primary Config.
-    pub fn apply_rules_file_fallbacks(
-        &mut self,
-        rf: &RulesFile,
-        explicit_keep_running: bool,
-        explicit_hide_icon: bool,
-        explicit_log_requests: bool,
-        explicit_check_for_updates: bool,
-    ) {
+    pub fn apply_rules_file_fallbacks(&mut self, rf: &RulesFile, explicit: ExplicitOptions) {
         self.fallback_handlers = compile_json_rules(&rf.rules);
-        if !self.has_explicit_default_browser && !rf.default_browser.is_empty() {
-            let mut db = BrowserConfig::from_spec_str(&rf.default_browser, "");
-            if !rf.default_profile.is_empty() {
-                if let Some(c) = rf.default_profile.strip_prefix("container:") {
-                    db.container = (!c.is_empty()).then(|| c.to_string());
-                    db.profile.clear();
-                } else {
-                    db.profile = rf.default_profile.clone();
-                }
-            }
-            self.default_browser = db;
-        }
-        if let Some(opts) = &rf.options {
-            if !explicit_keep_running {
-                if let Some(v) = opts.keep_running {
-                    self.options.keep_running = v;
-                }
-            }
-            if !explicit_hide_icon {
-                if let Some(v) = opts.hide_icon {
-                    self.options.hide_icon = v;
-                }
-            }
-            if !explicit_log_requests {
-                if let Some(v) = opts.log_requests {
-                    self.options.log_requests = v;
-                }
-            }
-            if !explicit_check_for_updates {
-                if let Some(v) = opts.check_for_updates {
-                    self.options.check_for_updates = v;
-                }
+        if !self.has_explicit_default_browser {
+            if let Some(db) = rules_file_default_browser(rf) {
+                self.default_browser = db;
             }
         }
+        inherit_rules_file_options(&mut self.options, rf, explicit);
     }
 
     /// Resolves `raw_url` through all compiled rewrites, primary handlers, and fallback JSON rules.
@@ -522,11 +548,10 @@ pub fn compile_json_rules(rules: &[Rule]) -> Vec<CompiledHandler> {
         let mut target = TomlBrowserTarget::NameOrAlias(r.browser.clone())
             .to_browser_config(&Default::default(), "");
         if !r.profile.is_empty() {
-            if let Some(c) = r.profile.strip_prefix("container:") {
-                target.container = (!c.is_empty()).then(|| c.to_string());
-                target.profile.clear();
-            } else {
-                target.profile = r.profile.clone();
+            let (profile, container) = ProfileSelector::parse(&r.profile).split_owned();
+            target.profile = profile;
+            if let Some(c) = container {
+                target.container = Some(c);
             }
         }
         out.push(CompiledHandler { matcher, target });
@@ -552,6 +577,23 @@ pub fn decode_protocol_url(url_str: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_profile_selector_parsing() {
+        use crate::browser::ProfileSelector;
+        assert_eq!(
+            ProfileSelector::parse("Work").split_owned(),
+            ("Work".to_string(), None)
+        );
+        assert_eq!(
+            ProfileSelector::parse("container:Work").split_owned(),
+            (String::new(), Some("Work".to_string()))
+        );
+        assert_eq!(
+            ProfileSelector::parse("container:").split_owned(),
+            (String::new(), None)
+        );
+    }
 
     #[test]
     fn test_decode_protocol_urls() {

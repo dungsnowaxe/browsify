@@ -6,7 +6,7 @@ use std::fs;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -14,6 +14,24 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 const MAX_LOG_BUFFER: usize = 200;
 const MAX_RECENT_URLS: usize = 10;
 const IDLE_SHUTDOWN_GRACE: Duration = Duration::from_secs(30);
+
+/// Severity of a UI log entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LogLevel {
+    Info,
+    Warn,
+    Error,
+}
+
+impl LogLevel {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            LogLevel::Info => "info",
+            LogLevel::Warn => "warn",
+            LogLevel::Error => "error",
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogEntry {
@@ -40,6 +58,46 @@ pub struct UpdateInfo {
     pub release_url: String,
 }
 
+impl UpdateInfo {
+    /// Update checks are disabled in configuration; nothing to show.
+    pub fn disabled() -> Self {
+        Self {
+            version: String::new(),
+            has_update: false,
+            update_check_enabled: false,
+            download_url: String::new(),
+            release_url: String::new(),
+        }
+    }
+
+    /// A check ran; the running version is the latest known release (or the check failed).
+    pub fn no_update(version: String) -> Self {
+        Self {
+            version,
+            has_update: false,
+            update_check_enabled: true,
+            download_url: String::new(),
+            release_url: String::new(),
+        }
+    }
+
+    /// A check ran and produced release URLs.
+    pub fn available(
+        version: String,
+        has_update: bool,
+        download_url: String,
+        release_url: String,
+    ) -> Self {
+        Self {
+            version,
+            has_update,
+            update_check_enabled: true,
+            download_url,
+            release_url,
+        }
+    }
+}
+
 struct GlobalTelemetryState {
     logs: VecDeque<LogEntry>,
     recent_urls: VecDeque<RecentRoutedUrl>,
@@ -62,21 +120,31 @@ fn telemetry() -> &'static Mutex<GlobalTelemetryState> {
     })
 }
 
-pub fn log_event(level: &str, msg: impl Into<String>) {
+/// Builds a UI push event (`{"type":…,"message":…}`) shared by SSE and the init RPC.
+fn event_value(event_type: &str, message: serde_json::Value) -> serde_json::Value {
+    serde_json::json!({ "type": event_type, "message": message })
+}
+
+fn sse_event(event_type: &str, message: serde_json::Value) -> String {
+    event_value(event_type, message).to_string()
+}
+
+pub fn log_event(level: LogLevel, msg: impl Into<String>) {
     let now_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis())
         .unwrap_or(0);
     let entry = LogEntry {
         time: now_ms,
-        level: level.to_string(),
+        level: level.as_str().to_string(),
         msg: msg.into(),
     };
-    let sse_payload = serde_json::json!({
-        "type": "log",
-        "message": serde_json::to_string(&entry).unwrap_or_default()
-    })
-    .to_string();
+    let sse_payload = sse_event(
+        "log",
+        serde_json::to_string(&entry)
+            .unwrap_or_default()
+            .into(),
+    );
 
     if let Ok(mut guard) = telemetry().lock() {
         if guard.logs.len() >= MAX_LOG_BUFFER {
@@ -87,7 +155,7 @@ pub fn log_event(level: &str, msg: impl Into<String>) {
     }
 }
 
-#[allow(dead_code)]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub fn record_routed_url(input_url: &str, final_url: &str, browser: &str, profile: &str) {
     if let Ok(mut guard) = telemetry().lock() {
         guard.recent_urls.retain(|r| r.input_url != input_url);
@@ -103,7 +171,7 @@ pub fn record_routed_url(input_url: &str, final_url: &str, browser: &str, profil
     }
 }
 
-#[allow(dead_code)]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub fn get_recent_routed_urls() -> Vec<RecentRoutedUrl> {
     telemetry()
         .lock()
@@ -112,11 +180,10 @@ pub fn get_recent_routed_urls() -> Vec<RecentRoutedUrl> {
 }
 
 pub fn set_update_info(info: UpdateInfo) {
-    let payload = serde_json::json!({
-        "type": "updateInfo",
-        "message": &info
-    })
-    .to_string();
+    let payload = sse_event(
+        "updateInfo",
+        serde_json::to_value(&info).unwrap_or_default(),
+    );
     if let Ok(mut guard) = telemetry().lock() {
         guard.update_info = Some(info);
         broadcast_sse_locked(&mut guard, &payload);
@@ -132,11 +199,7 @@ pub fn is_ui_server_active() -> bool {
 
 pub fn notify_config_reloaded(engine: &BrowsifyEngine) {
     let msg = build_config_message(engine);
-    let payload = serde_json::json!({
-        "type": "config",
-        "message": msg
-    })
-    .to_string();
+    let payload = sse_event("config", msg);
     if let Ok(mut guard) = telemetry().lock() {
         broadcast_sse_locked(&mut guard, &payload);
     }
@@ -150,7 +213,7 @@ fn broadcast_sse_locked(guard: &mut GlobalTelemetryState, json_payload: &str) {
 }
 
 /// Spawns the on-demand UI server in a background thread if not already active, or opens the existing URL.
-#[allow(dead_code)]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub fn spawn_or_open_ui_server(
     engine: Arc<Mutex<BrowsifyEngine>>,
     profile_resolver: Arc<ProfileResolver>,
@@ -167,7 +230,8 @@ pub fn spawn_or_open_ui_server(
 }
 
 /// Serves the token-authenticated Browsify UI over `127.0.0.1:<port>` with SSE log streaming
-/// and automatic 30-second idle shutdown once all browser tabs disconnect (0 MB idle RAM).
+/// and automatic 30-second idle shutdown once no UI tab remains connected (0 MB idle RAM),
+/// even if a tab never managed to open the `/api/events` SSE stream.
 pub fn run_ui_server(
     engine: Arc<Mutex<BrowsifyEngine>>,
     profile_resolver: Arc<ProfileResolver>,
@@ -177,7 +241,7 @@ pub fn run_ui_server(
     let listener = TcpListener::bind(("127.0.0.1", port))
         .map_err(|e| format!("Failed to bind UI server on 127.0.0.1:{}: {}", port, e))?;
     let local_addr = listener.local_addr().map_err(|e| e.to_string())?;
-    let session_token = generate_session_token();
+    let session_token = generate_session_token()?;
     let url = format!("http://{}/?token={}", local_addr, session_token);
 
     if let Ok(mut guard) = telemetry().lock() {
@@ -185,51 +249,52 @@ pub fn run_ui_server(
     }
 
     println!("Browsify UI listening on {}", url);
-    log_event("info", format!("On-demand UI server started on {}", local_addr));
+    log_event(
+        LogLevel::Info,
+        format!("On-demand UI server started on {}", local_addr),
+    );
 
     if open_browser {
         open_url_in_system_browser(&url);
     }
 
     let stop_flag = Arc::new(AtomicBool::new(false));
-    let had_sse_client = Arc::new(AtomicBool::new(false));
-    let active_sse_count = Arc::new(AtomicUsize::new(0));
     let last_activity = Arc::new(Mutex::new(Instant::now()));
 
     // Background idle reaper & SSE heartbeat thread:
-    // Shuts down the server 30s after the last UI tab closes.
+    // Shuts down the server 30s after the last request or SSE disconnect — including
+    // when no tab ever connected, so the daemon never retains an idle UI server.
     {
         let stop_flag = Arc::clone(&stop_flag);
-        let had_sse_client = Arc::clone(&had_sse_client);
-        let active_sse_count = Arc::clone(&active_sse_count);
         let last_activity = Arc::clone(&last_activity);
         thread::spawn(move || {
             while !stop_flag.load(Ordering::Relaxed) {
                 thread::sleep(Duration::from_secs(3));
-                let mut alive_count = 0usize;
                 if let Ok(mut guard) = telemetry().lock() {
                     guard.sse_clients.retain_mut(|stream| {
                         stream.write_all(b": keepalive\n\n").is_ok() && stream.flush().is_ok()
                     });
-                    alive_count = guard.sse_clients.len();
                 }
-                active_sse_count.store(alive_count, Ordering::Relaxed);
-                if alive_count > 0 {
+                // While any tab holds an SSE stream, keep refreshing the activity
+                // timestamp so a later disconnect starts the full 30s grace period.
+                if telemetry()
+                    .lock()
+                    .map(|g| !g.sse_clients.is_empty())
+                    .unwrap_or(false)
+                {
                     if let Ok(mut t) = last_activity.lock() {
                         *t = Instant::now();
                     }
                     continue;
                 }
-                if had_sse_client.load(Ordering::Relaxed) {
-                    let idle_elapsed = last_activity
-                        .lock()
-                        .map(|t| t.elapsed())
-                        .unwrap_or(Duration::ZERO);
-                    if idle_elapsed >= IDLE_SHUTDOWN_GRACE {
-                        stop_flag.store(true, Ordering::Relaxed);
-                        let _ = TcpStream::connect(local_addr);
-                        break;
-                    }
+                let idle_elapsed = last_activity
+                    .lock()
+                    .map(|t| t.elapsed())
+                    .unwrap_or(Duration::ZERO);
+                if idle_elapsed >= IDLE_SHUTDOWN_GRACE {
+                    stop_flag.store(true, Ordering::Relaxed);
+                    let _ = TcpStream::connect(local_addr);
+                    break;
                 }
             }
         });
@@ -286,10 +351,8 @@ pub fn run_ui_server(
             let headers = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nConnection: keep-alive\r\n\r\n: connected\n\n";
             if stream.write_all(headers.as_bytes()).is_ok() && stream.flush().is_ok() {
                 let _ = stream.set_read_timeout(None);
-                had_sse_client.store(true, Ordering::Relaxed);
                 if let Ok(mut guard) = telemetry().lock() {
                     guard.sse_clients.push(stream);
-                    active_sse_count.store(guard.sse_clients.len(), Ordering::Relaxed);
                 }
             }
             continue;
@@ -395,22 +458,17 @@ fn validate_loopback_and_token(raw_req: &str, query: &str, expected_token: &str)
     host_ok && origin_ok && token_matches
 }
 
-fn generate_session_token() -> String {
+fn generate_session_token() -> Result<String, String> {
     let mut bytes = [0u8; 16];
-    if let Ok(mut f) = fs::File::open("/dev/urandom") {
-        let _ = f.read_exact(&mut bytes);
-    } else {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0x9e3779b97f4a7c15);
-        bytes = nanos.to_le_bytes();
-    }
+    let mut f = fs::File::open("/dev/urandom")
+        .map_err(|e| format!("Failed to open /dev/urandom for session token: {}", e))?;
+    f.read_exact(&mut bytes)
+        .map_err(|e| format!("Failed to read session token entropy: {}", e))?;
     let mut hex = String::with_capacity(32);
     for b in bytes {
         hex.push_str(&format!("{:02x}", b));
     }
-    hex
+    Ok(hex)
 }
 
 fn inject_session_token(html: &str, token: &str) -> String {
@@ -474,7 +532,6 @@ fn build_config_message(eng: &BrowsifyEngine) -> serde_json::Value {
         "rewrites": sum.rewrites_count,
         "defaultBrowser": sum.default_browser,
         "configPath": cfg_path,
-        "isJSConfig": sum.has_primary_config,
         "hasPrimaryConfig": sum.has_primary_config,
         "explicitDefaultBrowser": sum.explicit_default_browser,
         "pureNativeFastPath": sum.pure_native_fast_path,
@@ -504,32 +561,20 @@ fn handle_rpc(
             let eng = engine.lock().unwrap();
             let sum = eng.summary();
             let mut events = vec![
-                serde_json::json!({
-                    "type": "version",
-                    "message": format!("v{}", env!("CARGO_PKG_VERSION"))
-                }),
-                serde_json::json!({
-                    "type": "buildInfo",
-                    "message": format!("({})", sum.format)
-                }),
-                serde_json::json!({
-                    "type": "config",
-                    "message": build_config_message(&eng)
-                }),
+                event_value("version", format!("v{}", env!("CARGO_PKG_VERSION")).into()),
+                event_value("buildInfo", format!("({})", sum.format).into()),
+                event_value("config", build_config_message(&eng)),
             ];
             if let Ok(guard) = telemetry().lock() {
                 if let Some(ref uinfo) = guard.update_info {
-                    events.push(serde_json::json!({
-                        "type": "updateInfo",
-                        "message": uinfo
-                    }));
+                    events.push(event_value(
+                        "updateInfo",
+                        serde_json::to_value(uinfo).unwrap_or_default(),
+                    ));
                 }
                 for entry in &guard.logs {
                     if let Ok(s) = serde_json::to_string(entry) {
-                        events.push(serde_json::json!({
-                            "type": "log",
-                            "message": s
-                        }));
+                        events.push(event_value("log", s.into()));
                     }
                 }
             }
@@ -590,10 +635,10 @@ fn handle_rpc(
                     .to_string();
                     drop(eng);
                     log_event(
-                        "info",
+                        LogLevel::Info,
                         format!("Saved {} rules to {}", rf.rules.len(), rules_path.display()),
                     );
-                    crate::macos::trigger_update_check_if_enabled(
+                    crate::update::trigger_update_check_if_enabled(
                         engine,
                         profile_resolver.home_dir(),
                     );
@@ -673,7 +718,11 @@ fn handle_rpc(
             let ok = crate::macos::set_as_default_browser();
             let eng = engine.lock().unwrap();
             log_event(
-                if ok { "info" } else { "warn" },
+                if ok {
+                    LogLevel::Info
+                } else {
+                    LogLevel::Warn
+                },
                 if ok {
                     "Requested macOS to set Browsify as the default browser"
                 } else {
@@ -772,6 +821,15 @@ const FALLBACK_SPA_HTML: &str = r#"<!DOCTYPE html>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_session_token_is_128_bit_random_hex() {
+        let a = generate_session_token().unwrap();
+        let b = generate_session_token().unwrap();
+        assert_eq!(a.len(), 32);
+        assert!(a.chars().all(|c| c.is_ascii_hexdigit()));
+        assert_ne!(a, b);
+    }
 
     #[test]
     fn test_validate_loopback_and_token_csrf_protection() {

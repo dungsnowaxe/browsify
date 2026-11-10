@@ -2,8 +2,9 @@ pub mod prelude;
 pub mod preprocess;
 
 use browsify_core::{
-    compile_json_rules, decode_protocol_url, BrowserConfig, CompiledHandler, CompiledMatcher,
-    CompiledRewrite, CompiledTransform, ConfigOptions, HostnamePattern, ModifierKeys, OpenerInfo,
+    compile_json_rules, decode_protocol_url, inherit_rules_file_options,
+    rules_file_default_browser, BrowserConfig, CompiledHandler, CompiledMatcher, CompiledRewrite,
+    CompiledTransform, ConfigOptions, ExplicitOptions, HostnamePattern, ModifierKeys, OpenerInfo,
     PowerInfo, Rule, RulesFile, SystemInfo,
 };
 use prelude::JS_PRELUDE;
@@ -11,7 +12,7 @@ use preprocess::preprocess_js_ts_config;
 use regex::Regex;
 use rquickjs::{Context, Function, Object, Runtime};
 use serde::{Deserialize, Serialize};
-use std::sync::OnceLock;
+use std::sync::RwLock;
 use url::Url;
 
 pub struct HostQueryCallbacks {
@@ -19,15 +20,54 @@ pub struct HostQueryCallbacks {
     pub get_system_info: fn() -> SystemInfo,
     pub get_power_info: fn() -> PowerInfo,
     pub is_app_running: fn(&str) -> bool,
+    pub notify: fn(&str, &str),
+    /// Lazily reads an opener's focused window title (macOS AX API) when a JS
+    /// callback reads `options.opener.windowTitle` at resolve time.
+    pub get_window_title: fn(i32) -> Option<String>,
 }
 
-static HOST_CALLBACKS: OnceLock<HostQueryCallbacks> = OnceLock::new();
+impl HostQueryCallbacks {
+    /// Callback set that returns inert defaults; used until the host registers real ones.
+    pub const NONE: Self = Self {
+        get_modifier_keys: ModifierKeys::default,
+        get_system_info: default_system_info,
+        get_power_info: default_power_info,
+        is_app_running: |_| false,
+        notify: |_, _| {},
+        get_window_title: |_| None,
+    };
+}
+
+fn default_system_info() -> SystemInfo {
+    SystemInfo {
+        localized_name: "Mac".to_string(),
+        name: "mac".to_string(),
+    }
+}
+
+fn default_power_info() -> PowerInfo {
+    PowerInfo {
+        is_charging: false,
+        is_connected: true,
+        percentage: Some(100),
+    }
+}
+
+static HOST_CALLBACKS: RwLock<HostQueryCallbacks> = RwLock::new(HostQueryCallbacks::NONE);
 
 /// Registers lazy OS host callbacks invoked on-demand when a JS rule calls
 /// `finicky.getModifierKeys()`, `finicky.getSystemInfo()`, `finicky.getPowerInfo()`,
-/// or `finicky.isAppRunning(id)`.
+/// `finicky.isAppRunning(id)`, `finicky.notify(title, subtitle)`, or reads
+/// `options.opener.windowTitle`.
 pub fn register_host_callbacks(callbacks: HostQueryCallbacks) {
-    let _ = HOST_CALLBACKS.set(callbacks);
+    if let Ok(mut guard) = HOST_CALLBACKS.write() {
+        *guard = callbacks;
+    }
+}
+
+fn with_host_callbacks<T>(f: impl FnOnce(&HostQueryCallbacks) -> T) -> T {
+    let guard = HOST_CALLBACKS.read().unwrap_or_else(|e| e.into_inner());
+    f(&guard)
 }
 
 #[derive(Debug, Clone)]
@@ -238,10 +278,7 @@ fn bind_host_functions(ctx: &rquickjs::Ctx<'_>) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
 
     let get_mod_fn = Function::new(ctx.clone(), || -> String {
-        let mods = HOST_CALLBACKS
-            .get()
-            .map(|cb| (cb.get_modifier_keys)())
-            .unwrap_or_default();
+        let mods = with_host_callbacks(|cb| (cb.get_modifier_keys)());
         serde_json::to_string(&mods).unwrap_or_default()
     })
     .map_err(|e| e.to_string())?;
@@ -250,13 +287,7 @@ fn bind_host_functions(ctx: &rquickjs::Ctx<'_>) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
 
     let get_sys_fn = Function::new(ctx.clone(), || -> String {
-        let sys = HOST_CALLBACKS
-            .get()
-            .map(|cb| (cb.get_system_info)())
-            .unwrap_or_else(|| SystemInfo {
-                localized_name: "Mac".to_string(),
-                name: "mac".to_string(),
-            });
+        let sys = with_host_callbacks(|cb| (cb.get_system_info)());
         serde_json::to_string(&sys).unwrap_or_default()
     })
     .map_err(|e| e.to_string())?;
@@ -265,14 +296,7 @@ fn bind_host_functions(ctx: &rquickjs::Ctx<'_>) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
 
     let get_pwr_fn = Function::new(ctx.clone(), || -> String {
-        let pwr = HOST_CALLBACKS
-            .get()
-            .map(|cb| (cb.get_power_info)())
-            .unwrap_or_else(|| PowerInfo {
-                is_charging: false,
-                is_connected: true,
-                percentage: Some(100),
-            });
+        let pwr = with_host_callbacks(|cb| (cb.get_power_info)());
         serde_json::to_string(&pwr).unwrap_or_default()
     })
     .map_err(|e| e.to_string())?;
@@ -281,14 +305,27 @@ fn bind_host_functions(ctx: &rquickjs::Ctx<'_>) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
 
     let is_running_fn = Function::new(ctx.clone(), |id: String| -> bool {
-        HOST_CALLBACKS
-            .get()
-            .map(|cb| (cb.is_app_running)(&id))
-            .unwrap_or(false)
+        with_host_callbacks(|cb| (cb.is_app_running)(&id))
     })
     .map_err(|e| e.to_string())?;
     globals
         .set("__browsifyHostIsAppRunning", is_running_fn)
+        .map_err(|e| e.to_string())?;
+
+    let notify_fn = Function::new(ctx.clone(), |title: String, subtitle: String| {
+        with_host_callbacks(|cb| (cb.notify)(&title, &subtitle));
+    })
+    .map_err(|e| e.to_string())?;
+    globals
+        .set("__browsifyHostNotify", notify_fn)
+        .map_err(|e| e.to_string())?;
+
+    let get_title_fn = Function::new(ctx.clone(), |pid: i32| -> String {
+        with_host_callbacks(|cb| (cb.get_window_title)(pid)).unwrap_or_default()
+    })
+    .map_err(|e| e.to_string())?;
+    globals
+        .set("__browsifyHostGetWindowTitle", get_title_fn)
         .map_err(|e| e.to_string())?;
 
     Ok(())
@@ -383,7 +420,18 @@ impl HybridEngine {
         };
 
         let all_static = !any_js_step;
-        let uses_window_title = any_js_step && source.contains("windowTitle");
+        // Window titles for dynamic JS callbacks are fetched lazily at resolve time
+        // via the `__browsifyHostGetWindowTitle` host function (see prelude), so only
+        // native-lowered matchers can require eager collection here — and `lower_matcher`
+        // never produces an `OpenerWindowTitle` matcher, so this is `false` for JS configs
+        // today but stays correct if native lowering grows window-title matchers.
+        let uses_window_title = rewrites.iter().any(|r| match r {
+            HybridRewrite::Native(c) => c.matcher.uses_window_title(),
+            HybridRewrite::Js(_) => false,
+        }) || handlers.iter().any(|h| match h {
+            HybridHandler::Native(c) => c.matcher.uses_window_title(),
+            HybridHandler::Js(_) => false,
+        });
 
         let default_browser_name = match &default_browser {
             HybridDefaultBrowser::Native(spec) => {
@@ -622,42 +670,23 @@ impl HybridEngine {
     /// Applies `rules.json` handlers and inherits `defaultBrowser`/`options` when omitted in the JS config.
     pub fn apply_rules_file_fallbacks(&mut self, rf: &RulesFile) {
         self.fallback_handlers = compile_json_rules(&rf.rules);
-        if !self.report.explicit_default_browser && !rf.default_browser.is_empty() {
-            let mut db = BrowserConfig::from_spec_str(&rf.default_browser, "");
-            if !rf.default_profile.is_empty() {
-                if let Some(c) = rf.default_profile.strip_prefix("container:") {
-                    db.container = (!c.is_empty()).then(|| c.to_string());
-                    db.profile.clear();
-                } else {
-                    db.profile = rf.default_profile.clone();
-                }
-            }
-            self.report.default_browser_name = db.name.clone();
-            self.report.default_browser_profile = db.profile.clone();
-            self.default_browser = HybridDefaultBrowser::Native(db);
-        }
-        if let Some(opts) = &rf.options {
-            if !self.report.explicit_keep_running {
-                if let Some(v) = opts.keep_running {
-                    self.report.options.keep_running = v;
-                }
-            }
-            if !self.report.explicit_hide_icon {
-                if let Some(v) = opts.hide_icon {
-                    self.report.options.hide_icon = v;
-                }
-            }
-            if !self.report.explicit_log_requests {
-                if let Some(v) = opts.log_requests {
-                    self.report.options.log_requests = v;
-                }
-            }
-            if !self.report.explicit_check_for_updates {
-                if let Some(v) = opts.check_for_updates {
-                    self.report.options.check_for_updates = v;
-                }
+        if !self.report.explicit_default_browser {
+            if let Some(db) = rules_file_default_browser(rf) {
+                self.report.default_browser_name = db.name.clone();
+                self.report.default_browser_profile = db.profile.clone();
+                self.default_browser = HybridDefaultBrowser::Native(db);
             }
         }
+        inherit_rules_file_options(
+            &mut self.report.options,
+            rf,
+            ExplicitOptions {
+                keep_running: self.report.explicit_keep_running,
+                hide_icon: self.report.explicit_hide_icon,
+                log_requests: self.report.explicit_log_requests,
+                check_for_updates: self.report.explicit_check_for_updates,
+            },
+        );
     }
 
     /// Resolves `raw_url` through the ordered hybrid pipeline (interleaving Native Rust steps
@@ -738,7 +767,7 @@ impl HybridEngine {
                     })?;
                     if !matched_json.is_empty() {
                         let mut cfg: BrowserConfig = serde_json::from_str(&matched_json)
-                            .map_err(|e| format!("Invalid browser config from JS: {}", e))?;
+                            .map_err(|e| format!("Invalid browser target from JS: {}", e))?;
                         if cfg.open_in_background.is_none() {
                             cfg.open_in_background = Some(open_in_background);
                         }
@@ -785,7 +814,7 @@ impl HybridEngine {
                         .map_err(|e| format!("Failed evaluating defaultBrowser in JS: {}", e))
                 })?;
                 let mut cfg: BrowserConfig = serde_json::from_str(&res_json)
-                    .map_err(|e| format!("Invalid defaultBrowser returned from JS: {}", e))?;
+                    .map_err(|e| format!("Invalid defaultBrowser target from JS: {}", e))?;
                 if cfg.open_in_background.is_none() {
                     cfg.open_in_background = Some(open_in_background);
                 }
@@ -970,6 +999,7 @@ mod tests {
             bundle_id: "com.test.app".to_string(),
             path: "/Applications/TestApp.app".to_string(),
             window_title: None,
+            pid: 0,
         }
     }
 
@@ -1370,6 +1400,7 @@ export default {
             bundle_id: "com.tinyspeck.slackmacgap".to_string(),
             path: "/Applications/Slack.app".to_string(),
             window_title: None,
+            pid: 0,
         };
         assert_eq!(
             eng_ts
@@ -1399,5 +1430,115 @@ export default {
                 .name,
             "Firefox"
         );
+    }
+
+    #[test]
+    fn test_config_load_does_not_execute_dynamic_callbacks() {
+        ensure_test_host_callbacks();
+        let js = r#"
+let counter = 0;
+export default {
+  defaultBrowser: () => (counter++ === 0 ? "Firefox" : "Safari"),
+  handlers: [],
+};
+"#;
+        let eng = HybridEngine::from_js_source(js, &[]).unwrap();
+        assert!(eng.has_js_vm());
+        // The first callback evaluation must be the first *real* request,
+        // never a load-time inspection call.
+        assert_eq!(
+            eng.resolve("https://example.com", None, false).unwrap().name,
+            "Firefox"
+        );
+        assert_eq!(
+            eng.resolve("https://example.com", None, false).unwrap().name,
+            "Safari"
+        );
+    }
+
+    #[test]
+    fn test_window_title_fetched_lazily_via_host_callback() {
+        ensure_test_host_callbacks();
+        let js = r#"
+export default {
+  defaultBrowser: "Safari",
+  handlers: [
+    {
+      match: (url, options) =>
+        url.hostname === "work.example" && options.opener?.windowTitle === "Inbox",
+      browser: "Firefox",
+    },
+  ],
+};
+"#;
+        let eng = HybridEngine::from_js_source(js, &[]).unwrap();
+        assert!(eng.has_js_vm());
+
+        // Conditional access on a branch no static analysis could predict: the
+        // title is fetched lazily exactly when the callback reads it.
+        let mut opener = mock_opener();
+        opener.pid = 4242;
+        assert_eq!(
+            eng.resolve("https://work.example/x", Some(&opener), false)
+                .unwrap()
+                .name,
+            "Firefox"
+        );
+        assert!(TITLE_HITS.load(Ordering::SeqCst) >= 1);
+
+        // Opener without a readable title -> no match, falls through to the default.
+        opener.pid = 1;
+        assert_eq!(
+            eng.resolve("https://work.example/x", Some(&opener), false)
+                .unwrap()
+                .name,
+            "Safari"
+        );
+    }
+
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::sync::Once;
+
+    static NOTIFY_SEEN: AtomicBool = AtomicBool::new(false);
+    static TITLE_HITS: AtomicUsize = AtomicUsize::new(0);
+    static INIT_TEST_HOST: Once = Once::new();
+
+    /// Registers one shared, deterministic host callback set for all tests
+    /// (registration is idempotent and race-free via `Once`).
+    fn ensure_test_host_callbacks() {
+        INIT_TEST_HOST.call_once(|| {
+            register_host_callbacks(HostQueryCallbacks {
+                get_modifier_keys: ModifierKeys::default,
+                get_system_info: || SystemInfo {
+                    localized_name: "Mac".to_string(),
+                    name: "mac".to_string(),
+                },
+                get_power_info: || PowerInfo {
+                    is_charging: false,
+                    is_connected: true,
+                    percentage: Some(100),
+                },
+                is_app_running: |_id| false,
+                notify: |_title, _subtitle| {
+                    NOTIFY_SEEN.store(true, Ordering::SeqCst);
+                },
+                get_window_title: |pid| {
+                    TITLE_HITS.fetch_add(1, Ordering::SeqCst);
+                    (pid == 4242).then(|| "Inbox".to_string())
+                },
+            });
+        });
+    }
+
+    #[test]
+    fn test_finicky_notify_calls_host_callback() {
+        ensure_test_host_callbacks();
+        let js = r#"
+finicky.notify("Hello", "World");
+export default { defaultBrowser: "Safari" };
+"#;
+        let eng = HybridEngine::from_js_source(js, &[]).unwrap();
+        assert!(!eng.has_js_vm());
+        assert!(NOTIFY_SEEN.load(Ordering::SeqCst));
     }
 }

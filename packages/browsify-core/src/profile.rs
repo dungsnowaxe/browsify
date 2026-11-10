@@ -1,5 +1,6 @@
 use crate::browser::{
-    lookup_browser_meta, AppType, BrowserConfig, BrowserFamily, BrowserMeta, BROWSERS_REGISTRY,
+    lookup_browser_meta, AppType, BrowserConfig, BrowserFamily, BrowserMeta, ProfileSelector,
+    BROWSERS_REGISTRY,
 };
 use crate::sqlite_profiles::read_firefox_group_profiles;
 use serde::{Deserialize, Serialize};
@@ -237,19 +238,18 @@ impl ProfileResolver {
         let mut warning = None;
         let meta = lookup_browser_meta(&config.name);
 
-        let (effective_profile, effective_container) =
-            if let Some(c) = config.profile.strip_prefix("container:") {
-                (
-                    "",
-                    if !c.is_empty() {
-                        Some(c)
-                    } else {
-                        config.container.as_deref()
-                    },
-                )
-            } else {
-                (config.profile.as_str(), config.container.as_deref())
-            };
+        let (effective_profile, effective_container) = match ProfileSelector::parse(&config.profile)
+        {
+            ProfileSelector::Container(c) => (
+                "",
+                if !c.is_empty() {
+                    Some(c)
+                } else {
+                    config.container.as_deref()
+                },
+            ),
+            ProfileSelector::Profile(p) => (p, config.container.as_deref()),
+        };
 
         // 1. Handle Firefox Multi-Account Container URL rewrite if requested
         if let Some(container_name) = effective_container {
@@ -334,7 +334,7 @@ impl ProfileResolver {
         identifier: &str,
         profile: &str,
     ) -> Result<Vec<String>, String> {
-        if let Some(c) = profile.strip_prefix("container:") {
+        if let ProfileSelector::Container(c) = ProfileSelector::parse(profile) {
             if !c.is_empty() {
                 return Ok(Vec::new());
             }

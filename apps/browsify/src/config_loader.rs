@@ -1,6 +1,6 @@
 use browsify_core::{
-    resolve_short_url, rules_file_to_toml, BrowserConfig, ConfigOptions, NativeRouter, OpenerInfo,
-    ProfileResolver, RulesFile, TomlConfig,
+    resolve_short_url, rules_file_to_toml, BrowserConfig, ConfigOptions, ExplicitOptions,
+    NativeRouter, OpenerInfo, ProfileResolver, RulesFile, TomlConfig,
 };
 use browsify_js::HybridEngine;
 use std::fs;
@@ -10,8 +10,6 @@ use std::time::UNIX_EPOCH;
 #[derive(Debug, Clone)]
 pub struct ConfigSummary {
     pub config_path: Option<PathBuf>,
-    #[allow(dead_code)]
-    pub rules_path: Option<PathBuf>,
     pub has_primary_config: bool,
     pub explicit_default_browser: bool,
     pub format: String,
@@ -30,6 +28,36 @@ pub struct ConfigSummary {
 enum EngineBackend {
     Native(NativeRouter),
     Js(HybridEngine),
+}
+
+impl ConfigSummary {
+    /// Builds the summary for a config routed entirely by a `NativeRouter`
+    /// (TOML primary config, JSON rules config, or `rules.json` fallback).
+    fn for_native(
+        format: String,
+        config_path: Option<PathBuf>,
+        has_primary_config: bool,
+        router: &NativeRouter,
+    ) -> Self {
+        let total_h = router.handlers.len() + router.fallback_handlers.len();
+        let total_r = router.rewrites.len();
+        Self {
+            config_path,
+            has_primary_config,
+            explicit_default_browser: router.has_explicit_default_browser,
+            format,
+            pure_native_fast_path: true,
+            js_vm_active: false,
+            uses_window_title: router.uses_window_title(),
+            handlers_count: total_h,
+            static_handlers_count: total_h,
+            rewrites_count: total_r,
+            static_rewrites_count: total_r,
+            default_browser: router.default_browser.name.clone(),
+            options: router.options.clone(),
+            referenced_profiles: collect_router_profiles(router),
+        }
+    }
 }
 
 pub struct BrowsifyEngine {
@@ -84,80 +112,53 @@ impl BrowsifyEngine {
                 let mut router = NativeRouter::from_toml_config(&toml_cfg)?;
                 router.apply_rules_file_fallbacks(
                     &rules_file,
-                    toml_cfg.options.keep_running.is_some(),
-                    toml_cfg.options.hide_icon.is_some(),
-                    toml_cfg.options.log_requests.is_some(),
-                    toml_cfg.options.check_for_updates.is_some(),
+                    ExplicitOptions {
+                        keep_running: toml_cfg.options.keep_running.is_some(),
+                        hide_icon: toml_cfg.options.hide_icon.is_some(),
+                        log_requests: toml_cfg.options.log_requests.is_some(),
+                        check_for_updates: toml_cfg.options.check_for_updates.is_some(),
+                    },
                 );
-                let total_h = router.handlers.len() + router.fallback_handlers.len();
-                let total_r = router.rewrites.len();
-                let referenced_profiles = collect_router_profiles(&router);
-                let uses_window_title = router.uses_window_title();
-                let explicit_default_browser = router.has_explicit_default_browser;
-                let summary = ConfigSummary {
-                    config_path: Some(cfg_path.clone()),
-                    rules_path: has_rules_file.then_some(rules_path),
-                    has_primary_config: true,
-                    explicit_default_browser,
-                    format: "TOML (Native)".to_string(),
-                    pure_native_fast_path: true,
-                    js_vm_active: false,
-                    uses_window_title,
-                    handlers_count: total_h,
-                    static_handlers_count: total_h,
-                    rewrites_count: total_r,
-                    static_rewrites_count: total_r,
-                    default_browser: router.default_browser.name.clone(),
-                    options: router.options.clone(),
-                    referenced_profiles,
-                };
-                return Ok(Self {
-                    home_dir: home_dir.to_path_buf(),
-                    custom_config_path: custom_config_path.map(PathBuf::from),
-                    custom_rules_path: custom_rules_path.map(PathBuf::from),
+                let summary = ConfigSummary::for_native(
+                    "TOML (Native)".to_string(),
+                    Some(cfg_path.clone()),
+                    true,
+                    &router,
+                );
+                return Ok(Self::assemble(
+                    home_dir,
+                    custom_config_path,
+                    custom_rules_path,
                     skip_primary_config,
-                    primary_config_path: Some(cfg_path),
+                    Some(cfg_path),
                     config_mtime,
                     rules_mtime,
-                    backend: EngineBackend::Native(router),
+                    EngineBackend::Native(router),
                     summary,
-                });
+                ));
             }
 
             if ext == "json" {
                 let rf: RulesFile = serde_json::from_str(&source)
                     .map_err(|e| format!("Failed parsing JSON config: {}", e))?;
                 let router = NativeRouter::from_rules_file(&rf);
-                let total_h = router.handlers.len();
-                let referenced_profiles = collect_router_profiles(&router);
-                let summary = ConfigSummary {
-                    config_path: Some(cfg_path.clone()),
-                    rules_path: has_rules_file.then_some(rules_path),
-                    has_primary_config: false,
-                    explicit_default_browser: router.has_explicit_default_browser,
-                    format: "JSON Rules (Native)".to_string(),
-                    pure_native_fast_path: true,
-                    js_vm_active: false,
-                    uses_window_title: false,
-                    handlers_count: total_h,
-                    static_handlers_count: total_h,
-                    rewrites_count: 0,
-                    static_rewrites_count: 0,
-                    default_browser: router.default_browser.name.clone(),
-                    options: router.options.clone(),
-                    referenced_profiles,
-                };
-                return Ok(Self {
-                    home_dir: home_dir.to_path_buf(),
-                    custom_config_path: custom_config_path.map(PathBuf::from),
-                    custom_rules_path: custom_rules_path.map(PathBuf::from),
+                let summary = ConfigSummary::for_native(
+                    "JSON Rules (Native)".to_string(),
+                    Some(cfg_path.clone()),
+                    false,
+                    &router,
+                );
+                return Ok(Self::assemble(
+                    home_dir,
+                    custom_config_path,
+                    custom_rules_path,
                     skip_primary_config,
-                    primary_config_path: Some(cfg_path),
+                    Some(cfg_path),
                     config_mtime,
                     rules_mtime,
-                    backend: EngineBackend::Native(router),
+                    EngineBackend::Native(router),
                     summary,
-                });
+                ));
             }
 
             // `.js`, `.mjs`, `.ts` -> HybridEngine
@@ -184,7 +185,6 @@ impl BrowsifyEngine {
             }
             let summary = ConfigSummary {
                 config_path: Some(cfg_path.clone()),
-                rules_path: has_rules_file.then_some(rules_path),
                 has_primary_config: true,
                 explicit_default_browser: rep.explicit_default_browser,
                 format,
@@ -199,64 +199,70 @@ impl BrowsifyEngine {
                 options: rep.options,
                 referenced_profiles,
             };
-            return Ok(Self {
-                home_dir: home_dir.to_path_buf(),
-                custom_config_path: custom_config_path.map(PathBuf::from),
-                custom_rules_path: custom_rules_path.map(PathBuf::from),
+            return Ok(Self::assemble(
+                home_dir,
+                custom_config_path,
+                custom_rules_path,
                 skip_primary_config,
-                primary_config_path: Some(cfg_path),
+                Some(cfg_path),
                 config_mtime,
                 rules_mtime,
-                backend: EngineBackend::Js(engine),
+                EngineBackend::Js(engine),
                 summary,
-            });
+            ));
         }
 
         // No primary config found; use `rules.json` (or default Safari fallback)
         let router = NativeRouter::from_rules_file(&rules_file);
-        let total_h = router.handlers.len();
-        let referenced_profiles = collect_router_profiles(&router);
-        let summary = ConfigSummary {
-            config_path: has_rules_file.then(|| rules_path.clone()),
-            rules_path: has_rules_file.then_some(rules_path),
-            has_primary_config: false,
-            explicit_default_browser: router.has_explicit_default_browser,
-            format: if has_rules_file {
+        let summary = ConfigSummary::for_native(
+            if has_rules_file {
                 "rules.json (Native)".to_string()
             } else {
                 "Default (Safari fallback)".to_string()
             },
-            pure_native_fast_path: true,
-            js_vm_active: false,
-            uses_window_title: false,
-            handlers_count: total_h,
-            static_handlers_count: total_h,
-            rewrites_count: 0,
-            static_rewrites_count: 0,
-            default_browser: router.default_browser.name.clone(),
-            options: router.options.clone(),
-            referenced_profiles,
-        };
-        Ok(Self {
+            has_rules_file.then(|| rules_path),
+            false,
+            &router,
+        );
+        Ok(Self::assemble(
+            home_dir,
+            custom_config_path,
+            custom_rules_path,
+            skip_primary_config,
+            None,
+            None,
+            rules_mtime,
+            EngineBackend::Native(router),
+            summary,
+        ))
+    }
+
+    fn assemble(
+        home_dir: &Path,
+        custom_config_path: Option<&Path>,
+        custom_rules_path: Option<&Path>,
+        skip_primary_config: bool,
+        primary_config_path: Option<PathBuf>,
+        config_mtime: Option<u128>,
+        rules_mtime: Option<u128>,
+        backend: EngineBackend,
+        summary: ConfigSummary,
+    ) -> Self {
+        Self {
             home_dir: home_dir.to_path_buf(),
             custom_config_path: custom_config_path.map(PathBuf::from),
             custom_rules_path: custom_rules_path.map(PathBuf::from),
             skip_primary_config,
-            primary_config_path: None,
-            config_mtime: None,
+            primary_config_path,
+            config_mtime,
             rules_mtime,
-            backend: EngineBackend::Native(router),
+            backend,
             summary,
-        })
+        }
     }
 
     pub fn summary(&self) -> &ConfigSummary {
         &self.summary
-    }
-
-    #[allow(dead_code)]
-    pub fn uses_window_title(&self) -> bool {
-        self.summary.uses_window_title
     }
 
     /// Checks if either the Primary Config or `rules.json` has changed on disk since last load.
@@ -338,7 +344,7 @@ impl BrowsifyEngine {
                     self.summary.static_handlers_count = router.handlers.len();
                     self.summary.options = router.options.clone();
                 } else {
-                    router.apply_rules_file_fallbacks(rf, true, true, true, true);
+                    router.apply_rules_file_fallbacks(rf, ExplicitOptions::ALL);
                     self.summary.default_browser = router.default_browser.name.clone();
                     self.summary.handlers_count =
                         router.handlers.len() + router.fallback_handlers.len();

@@ -11,21 +11,20 @@ use serde::{Deserialize, Serialize};
 
 pub use browser::{
     autodetect_app_string_type, lookup_browser_meta, AppType, BrowserConfig, BrowserFamily,
-    BrowserMeta, BROWSERS_REGISTRY,
+    BrowserMeta, ProfileSelector, BROWSERS_REGISTRY,
 };
 pub use migrate::rules_file_to_toml;
 pub use profile::{MissingProfilePolicy, ProfileResolver, ResolvedLaunchPlan};
 pub use router::{
-    compile_json_rules, decode_protocol_url, CompiledHandler, CompiledMatcher, CompiledRewrite,
-    CompiledTransform, ConfigOptions, HostnamePattern, NativeRouter,
+    compile_json_rules, decode_protocol_url, ExplicitOptions, inherit_rules_file_options,
+    rules_file_default_browser, CompiledHandler, CompiledMatcher, CompiledRewrite, CompiledTransform,
+    ConfigOptions, HostnamePattern, NativeRouter,
 };
 pub use rules::{
     Rule, RulesFile, RulesOptions, TomlBrowserSpec, TomlBrowserTarget, TomlConfig, TomlHandlerRule,
     TomlOptions, TomlRewriteRule,
 };
-pub use shorturl::{
-    is_short_url, resolve_short_url, set_custom_short_url_resolver, SHORTENER_DOMAINS,
-};
+pub use shorturl::{is_short_url, resolve_short_url, SHORTENER_DOMAINS};
 pub use wildcard::{compile_wildcard, match_wildcard};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -36,6 +35,9 @@ pub struct OpenerInfo {
     pub path: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub window_title: Option<String>,
+    /// Process id of the opener, used to lazily fetch `windowTitle` on demand.
+    #[serde(default)]
+    pub pid: i32,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]

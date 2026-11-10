@@ -1,5 +1,34 @@
 use serde::{Deserialize, Serialize};
 
+/// A parsed [Profile Selector](GLOSSARY.md): either a plain profile name or a
+/// `container:` prefix identifying a browser container.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProfileSelector<'a> {
+    Profile(&'a str),
+    /// Container selector; the payload may be empty (`"container:"`).
+    Container(&'a str),
+}
+
+impl<'a> ProfileSelector<'a> {
+    /// Parses a Profile Selector string, splitting a leading `container:` prefix
+    /// (`"container:Work"` → `Container("Work")`, `"Work"` → `Profile("Work")`).
+    pub fn parse(selector: &'a str) -> Self {
+        match selector.strip_prefix("container:") {
+            Some(c) => Self::Container(c),
+            None => Self::Profile(selector),
+        }
+    }
+
+    /// Splits the selector into owned `(profile, container)` parts; a `container:`
+    /// selector clears the profile, and an empty container name yields `None`.
+    pub fn split_owned(&self) -> (String, Option<String>) {
+        match *self {
+            Self::Container(c) => (String::new(), (!c.is_empty()).then(|| c.to_string())),
+            Self::Profile(p) => (p.to_string(), None),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum AppType {
@@ -105,11 +134,7 @@ impl BrowserConfig {
             _ => (spec, ""),
         };
         let app_type = autodetect_app_string_type(Some(name_part));
-        let (profile, container) = if let Some(c) = profile_part.strip_prefix("container:") {
-            (String::new(), (!c.is_empty()).then(|| c.to_string()))
-        } else {
-            (profile_part.to_string(), None)
-        };
+        let (profile, container) = ProfileSelector::parse(profile_part).split_owned();
         Self {
             name: name_part.to_string(),
             app_type,

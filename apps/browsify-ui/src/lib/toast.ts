@@ -93,10 +93,10 @@ function createToastStore() {
   return {
     subscribe,
     show,
-    success: (message: string, duration?: number) => show(message, "success", duration),
+    success: (message: string, duration?: number) => show(message, "success", undefined, duration),
     error: (message: string, error: string, duration?: number) => show(message, "error", error, duration),
-    info: (message: string, duration?: number) => show(message, "info", duration),
-    warning: (message: string, duration?: number) => show(message, "warning", duration),
+    info: (message: string, duration?: number) => show(message, "info", undefined, duration),
+    warning: (message: string, duration?: number) => show(message, "warning", undefined, duration),
     remove,
     clear,
   };
