@@ -1,11 +1,11 @@
 {
-  "name": "Finicky Browser Addon",
-  "description": "The Official Finicky Browser Addon. Requires Finicky 4.1+ (macOS only)",
+  "name": "Browsify Browser Addon",
+  "description": "The Official Browsify Browser Addon for macOS.",
   "version": "0.2.0",
   "manifest_version": 3,
-  "homepage_url": "https://github.com/johnste/finicky",
+  "homepage_url": "https://github.com/snowaxe/browsify",
   "background": {
-    "service_worker": "background.js"    
+    "service_worker": "background.js"
   },
   "content_scripts": [
     {
@@ -13,11 +13,11 @@
       "js": ["contentScript.js"]
     }
   ],
-  "icons": { 
+  "icons": {
     "16": "icon16.png",
     "48": "icon48.png",
-   "128": "icon128.png",
-   "256": "icon256.png" 
+    "128": "icon128.png",
+    "256": "icon256.png"
   },
   "permissions": ["contextMenus"],
   "host_permissions": ["<all_urls>"]

@@ -1,10 +1,16 @@
+#!/bin/bash
+set -e
+
 ./scripts/build.sh
 mkdir -p dist
 
-# Pre-sign the bundle deeply with hardened runtime before gon takes over
-codesign --deep --force --options runtime \
-  --sign "Developer ID Application: John Sterling" \
-  ./apps/finicky/build/Finicky.app
+if [[ -n "$CODESIGN_IDENTITY" ]]; then
+  codesign --deep --force --options runtime \
+    --sign "$CODESIGN_IDENTITY" \
+    ./apps/browsify/build/Browsify.app
+fi
 
-export $(cat .env | xargs) && gon scripts/gon-config.json
-
+if [[ -f .env ]]; then
+  export $(cat .env | xargs)
+fi
+gon scripts/gon-config.json

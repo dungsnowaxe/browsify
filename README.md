@@ -1,110 +1,83 @@
-<div align="center"><picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://github.com/user-attachments/assets/ab66e6cc-25d1-4f5f-9c98-c742ecb2261f">
-  <img alt="Finicky Logo" height="110" src="https://github.com/user-attachments/assets/067d7619-a2be-49dd-8a4f-5e9a46fa632a">
-</picture>
-<br/><br/>
- <strong>Always open the right browser</strong><br>
-    <br/>
+# Browsify
 
-</div>
+**Always open the right browser & profile — in ~5 MB RAM and 2.3 µs.**
 
-Finicky is a macOS application that allows you to set up rules that decide which browser is opened for every url. With Finicky as your default browser, you can tell it to open Bluesky or Reddit in one browser, and LinkedIn or Google Meet in another.
+Browsify is an ultra-lean Rust URL router and browser profile launcher for macOS (`com.lavenxsnow.browsify`), engineered as a drop-in successor to [Finicky](https://github.com/johnste/finicky).
 
-- Route any URL to your preferred browser with powerful matching rules
-- Automatically edit URLs before opening them (e.g., force HTTPS, remove tracking parameters)
-- Write rules in JavaScript or TypeScript for complete control
-- Create complex routing logic with regular expressions and custom functions
-- Handle multiple browsers and apps with a single configuration
-- Keep your workflow organized by separating work and personal browsing
+- **32.5× Lower Memory**: ~4.5–5.7 MB RSS (`0 KB` JS heap when rules are declarative; `~550 KB` dirty anon RAM when using dynamic QuickJS functions) vs. 137–165 MB in Finicky v4.
+- **Sub-5 µs Hot Path**: Compile-time hybrid lowering turns declarative rules and `finicky.*` helpers into native Rust matchers (`~2.35 µs` end-to-end) and enters QuickJS (`~42.5 µs`) only for custom JS closures.
+- **< 1 µs Cached Profile Resolution**: Typed `serde` parser for 20+ Chromium browsers (`Local State` cached by `(mtime_ns, size)`) and 6+ Firefox-family browsers (`profiles.ini`, Firefox 136+ SQLite Profile Groups, and Multi-Account Containers).
+- **Zero-Idle-RAM Visual UI**: Token-authenticated on-demand `127.0.0.1:0` HTTP/SSE UI server that shuts down automatically 30s after the tab closes.
+- **100% Finicky v3/v4 Compatibility**: Loads `~/.config/browsify/config.toml`, `~/.browsify.{js,ts}`, `~/.finicky.{js,ts}`, and `rules.json`, and includes `browsify migrate`.
 
-[![GitHub prerelease](https://badgen.net/github/release/johnste/finicky?color=purple)](https://GitHub.com/johnste/finicky/releases/) ![MIT License](https://badgen.net/github/license/johnste/finicky) ![Finicky v4 release](https://badgen.net/github/milestones/johnste/finicky/6?color=pink)
+## Quick Start
 
-## Table of Contents
+### Declarative `config.toml` (`~/.config/browsify/config.toml`)
 
-- [Installation](#installation)
-- [Basic configuration](#basic-configuration)
-- [Configuration](#configuration)
-- [Migrating from Finicky 3](#migrating-from-finicky-3)
+```toml
+default_browser = "personal"
 
-## Installation
+[browsers.personal]
+name = "Google Chrome"
+profile = "Personal"
 
-- Download from [releases](https://github.com/johnste/finicky/releases)
-- Or install via homebrew: `brew install --cask finicky`
-- Create a JavaScript or TypeScript configuration file at `~/.finicky.js`.  Have a look at the example configuration below, or in the `example-config` folder.
-- Start Finicky (in Applications, or through Spotlight/Alfred/Raycast) and allow it to be set as the default browser. Starting Finicky manually opens the configuration/troubleshooting window. 
+[browsers.work]
+name = "Google Chrome"
+profile = "Work"
 
-## Basic configuration
+[[rewrite]]
+match = "*"
+strip_params = ["utm_*", "fbclid", "gclid"]
+force_https = true
 
-Here's a short example configuration that can help you get started
+[[handlers]]
+match = ["github.com/myorg/*", "linear.app/*"]
+browser = "work"
+
+[[handlers]]
+match_hostnames = ["bsky.app", "reddit.com"]
+browser = { name = "Firefox", profile = "default-release", container = "Social" }
+```
+
+### Drop-in `.finicky.js` / `.browsify.js`
 
 ```js
-// ~/.finicky.js
 export default {
   defaultBrowser: "Google Chrome",
   rewrite: [
-    {
-      // Redirect all x.com urls to use xcancel.com
-      match: "x.com/*",
-      url: (url) => {
-        url.host = "xcancel.com";
-        return url;
-      },
-    },
+    finicky.stripParams(["utm_*", "fbclid"]),
+    finicky.replaceHost("x.com/*", "xcancel.com"),
   ],
   handlers: [
     {
-      // Open all bsky.app urls in Firefox
       match: "bsky.app/*",
       browser: "Firefox",
     },
     {
-      // Open google.com and *.google.com urls in Google Chrome
-      match: [
-        "google.com/*", // match google.com urls
-        "*.google.com*", // also match google.com subdomains
-      ],
-      browser: "Google Chrome",
+      match: finicky.matchHostnames(["meet.google.com"]),
+      browser: { name: "Google Chrome", profile: "Work" },
     },
   ],
 };
 ```
 
-See the [configuration](#configuration) for all the features Finicky supports.
+## CLI Usage
 
-## Configuration
+```sh
+browsify test https://github.com/myorg/repo?utm_source=slack
+browsify open https://github.com/myorg/repo
+browsify validate
+browsify migrate --check
+browsify migrate --to-toml -o ~/.config/browsify/config.toml
+browsify list-browsers
+browsify list-profiles
+browsify ui
+```
 
-Finicky has extensive support for matching, rewriting and starting browsers or other application that handle urls. See the wiki for the [full configuration documentation](<https://github.com/johnste/finicky/wiki/Configuration-(v4)>) explaining available, APIs and options as well as detail information on how to match on urls.
+## Credits & License
 
-- The wiki has some good [configuration ideas](https://github.com/johnste/finicky/wiki/Configuration-ideas).
-- Visit [discussions](https://github.com/johnste/finicky/discussions) to discuss supporting specific apps.
+MIT License.
 
-## Migrating from Finicky 3
-
-Please see the [wiki page](https://github.com/johnste/finicky/wiki/Migrating-from-Finicky-3) for updating info and migrating your configuration
-
-# Other
-
-### Browser extensions
-
-Finicky has browser extensions for Chrome and Firefox. They add an "open with Finicky" on links, and alt-clicking links opens them in Finicky directly.
-
-- [Firefox Add-ons](https://addons.mozilla.org/en-US/firefox/addon/finicky/)
-- [Chrome Web Store](https://chromewebstore.google.com/detail/finicky/kcnjhpdfmjcbohngnmobipdllkhnpdbk)
-
-### Building Finicky from source
-
-See [Building Finicky from source](https://github.com/johnste/finicky/wiki/Building-Finicky-from-source)
-
-### Works well with
-
-If you are looking for something that lets you pick the browser to activate in a graphical interface, check out [Browserosaurus](https://browserosaurus.com/) by Will Stone, an open source browser prompter for macOS. It works really well together with Finicky!
-
-### Questions
-
-Have any other questions or need help? Please feel free to reach out to me on [Bluesky](https://bsky.app/profile/mejkarsense.se) or post an issue here
-
-## License
-
-[MIT](https://raw.githubusercontent.com/johnste/finicky/master/LICENSE)
-
-Icon designed by [@uetchy](https://github.com/uetchy)
+- Rust rewrite & hybrid architecture by [@snowaxe](https://github.com/snowaxe)
+- Based on [Finicky](https://github.com/johnste/finicky), originally created by [John Sterling](https://github.com/johnste)
+- Original icon designed by [@uetchy](https://github.com/uetchy)

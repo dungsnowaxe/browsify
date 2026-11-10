@@ -1,15 +1,15 @@
 {
-  "source": ["./apps/finicky/build/Finicky.app"],
-  "bundle_id": "se.johnste.finicky",
+  "source": ["./apps/browsify/build/Browsify.app"],
+  "bundle_id": "com.lavenxsnow.browsify",
   "apple_id": {
-    "username": "john@johnste.se"
+    "username": ""
   },
   "sign": {
-    "application_identity": "Developer ID Application: John Sterling"
+    "application_identity": ""
   },
   "dmg": {
-    "output_path": "dist/Finicky.dmg",
-    "volume_name": "Finicky",
+    "output_path": "dist/Browsify.dmg",
+    "volume_name": "Browsify",
     "app_drop_link": [200, 0]
   }
 }

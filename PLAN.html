@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Browsify — Technical Specification &amp; Rust Architecture Plan</title>
+<title>Browsify — Revised Technical Specification &amp; Rust Architecture Plan</title>
 <style>
   :root {
     --bg: #0b0f17;
@@ -86,7 +86,7 @@
   .hero p.subtitle {
     color: var(--text-muted);
     font-size: 15px;
-    max-width: 820px;
+    max-width: 860px;
   }
   .badge-row {
     display: flex;
@@ -300,38 +300,113 @@
   <header class="hero">
     <div class="hero-top">
       <div>
-        <h1>Browsify — Technical Specification &amp; Rust Architecture Plan</h1>
+        <h1>Browsify — Revised Technical Specification &amp; Rust Architecture Plan</h1>
         <p class="subtitle">
-          A standalone, ultra-lean Rust successor to Finicky for macOS (with a cross-platform core). Engineered for <strong>&lt; 6 MB RSS memory</strong>, <strong>sub-5 µs declarative URL routing</strong>, <strong>&lt; 1 µs cached browser profile resolution</strong>, <strong>0 MB idle UI overhead</strong>, and <strong>100% drop-in compatibility</strong> with Finicky v3/v4 configurations.
+          A standalone, ultra-lean Rust successor to Finicky for macOS (<code>com.lavenxsnow.browsify</code>) with a platform-agnostic core. Engineered for <strong>&lt; 6 MB RSS memory</strong>, <strong>sub-5 µs declarative URL routing</strong>, <strong>&lt; 1 µs cached browser profile resolution</strong>, <strong>0 MB idle UI overhead</strong>, <strong>zero telemetry by default</strong>, and <strong>100% drop-in compatibility</strong> with Finicky v3/v4 configurations.
         </p>
       </div>
     </div>
     <div class="badge-row">
       <span class="badge green">Target RAM: ~4.5–5.7 MB RSS (550 KB dirty anon)</span>
-      <span class="badge green">Hot Path: 2.35 µs (Native) / 42.5 µs (QuickJS)</span>
-      <span class="badge accent">JS Runtime: rquickjs (QuickJS-ng, dropped when static)</span>
-      <span class="badge accent">Config UI: On-Demand 127.0.0.1 Browser UI (0 MB idle)</span>
-      <span class="badge amber">Compatibility: Finicky v3, v4 (.js/.ts) &amp; rules.json</span>
+      <span class="badge green">Hot Path: 2.35 µs (Native) / 42.5 µs (Hybrid QuickJS)</span>
+      <span class="badge accent">Bundle ID: com.lavenxsnow.browsify (http, https, browsify, finicky)</span>
+      <span class="badge accent">Config UI: Token-Authenticated 127.0.0.1 HTTP/SSE (0 MB idle)</span>
+      <span class="badge amber">Domain Docs: GLOSSARY.md · ADR-0001 · ADR-0002</span>
     </div>
   </header>
 
   <!-- TOC -->
   <nav class="toc">
     <span class="toc-label">Sections:</span>
-    <a href="#sec-benchmarks">1. Empirical Benchmarks</a>
-    <a href="#sec-research">2. Competitive Deep Dive (Grinch &amp; Finch)</a>
-    <a href="#sec-architecture">3. Rust Workspace Architecture</a>
-    <a href="#sec-profiles">4. Browser &amp; Profile Engine</a>
-    <a href="#sec-compat">5. Finicky Compatibility &amp; Migration</a>
-    <a href="#sec-ui">6. On-Demand Localhost UI</a>
-    <a href="#sec-tests">7. Test Parity &amp; Finicky Issue Matrix</a>
-    <a href="#sec-roadmap">8. Phased Implementation Plan</a>
+    <a href="#sec-domain">1. Domain Model &amp; ADRs</a>
+    <a href="#sec-benchmarks">2. Empirical Benchmarks</a>
+    <a href="#sec-research">3. Competitive Deep Dive</a>
+    <a href="#sec-architecture">4. Workspace &amp; Hybrid Pipeline</a>
+    <a href="#sec-profiles">5. Browser, Profile &amp; macOS Daemon</a>
+    <a href="#sec-compat">6. Config Precedence &amp; Migration</a>
+    <a href="#sec-ui">7. On-Demand Localhost UI &amp; Security</a>
+    <a href="#sec-roadmap">8. Phased Implementation Checklist</a>
   </nav>
 
-  <!-- SECTION 1: EMPIRICAL BENCHMARKS -->
+  <!-- SECTION 1: DOMAIN MODEL & ADRS -->
+  <section id="sec-domain" class="card">
+    <div class="sec-header">
+      <h2>1. Canonical Domain Model (<code>GLOSSARY.md</code>) &amp; Architectural Decisions (<code>docs/adr/</code>)</h2>
+      <span class="sec-tag">Aligned with GLOSSARY.md, ADR-0001 &amp; ADR-0002</span>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Canonical Term</th>
+          <th>Definition</th>
+          <th>Avoid</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Opener</strong></td>
+          <td>The external application that initiated a URL open request, characterized by its application name, bundle identifier, path, and optional focused window title.</td>
+          <td><code>Caller</code>, <code>sender</code>, <code>source app</code></td>
+        </tr>
+        <tr>
+          <td><strong>Primary Config</strong></td>
+          <td>The user-authored configuration file (<code>config.toml</code>, <code>.browsify.{js,ts}</code>, or <code>.finicky.{js,ts}</code>) that defines the highest-priority rewrites, handlers, options, and default browser.</td>
+          <td><code>Script</code>, <code>main config</code></td>
+        </tr>
+        <tr>
+          <td><strong>UI Rules File</strong></td>
+          <td>The visual-editor rules configuration (<code>rules.json</code>) evaluated as fallback handlers and fallback defaults after the Primary Config.</td>
+          <td><code>Cached rules</code>, <code>secondary config</code></td>
+        </tr>
+        <tr>
+          <td><strong>Rewrite Rule</strong></td>
+          <td>A rule that matches an incoming URL and mutates or replaces it before handler evaluation.</td>
+          <td><code>Redirect</code>, <code>transform rule</code>, <code>modifier</code></td>
+        </tr>
+        <tr>
+          <td><strong>Handler Rule</strong></td>
+          <td>A rule that matches a post-rewrite URL and Opener to select a Browser Target.</td>
+          <td><code>Route</code>, <code>matcher rule</code></td>
+        </tr>
+        <tr>
+          <td><strong>Browser Target</strong></td>
+          <td>The logical destination selected by a Handler Rule or default browser—specifying browser identity, optional Profile Selector, Container, web app mode, custom arguments, and foreground/background preference—or suppression of the launch.</td>
+          <td><code>Browser config</code>, <code>browser spec</code></td>
+        </tr>
+        <tr>
+          <td><strong>Profile Selector</strong></td>
+          <td>The user-specified name, email address, directory key, path, or <code>container:&lt;Name&gt;</code> prefix that identifies a desired browser profile prior to resolution.</td>
+          <td><code>Profile flag</code>, <code>profile ID</code></td>
+        </tr>
+        <tr>
+          <td><strong>Launch Plan</strong></td>
+          <td>The concrete execution plan produced by resolving a Browser Target and its Profile Selector into final launch arguments, target URL, instance-spawning behavior, and window activation policy.</td>
+          <td><code>Launch config</code>, <code>open command</code></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="grid-2" style="margin-top: 16px;">
+      <div class="subbox">
+        <h4>ADR-0001: Compile-Time Hybrid Lowering with Ephemeral QuickJS</h4>
+        <p class="muted">
+          <code>docs/adr/0001-hybrid-lowering-with-ephemeral-quickjs.md</code> — Evaluates <code>.js</code>/<code>.ts</code> configs in <code>rquickjs</code>, lowers declarative rules and explicit <code>finicky.*</code> helper markers to native Rust matchers/transforms, and drops the QuickJS VM completely when 0 dynamic JS callbacks remain. Mixed configs run as an ordered hybrid pipeline where static steps execute in Rust and OS queries are bound as lazy Rust host callbacks.
+        </p>
+      </div>
+      <div class="subbox">
+        <h4>ADR-0002: On-Demand Loopback HTTP UI Server Instead of WKWebView</h4>
+        <p class="muted">
+          <code>docs/adr/0002-on-demand-loopback-ui-server.md</code> — Serves <code>apps/browsify-ui</code> on demand over an ephemeral, token-authenticated <code>127.0.0.1:0</code> HTTP + SSE server in the user's browser and shuts down ~30s after the last UI tab closes, eliminating the 40–80+ MB permanent RSS cost of an in-process <code>WKWebView</code>.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- SECTION 2: EMPIRICAL BENCHMARKS -->
   <section id="sec-benchmarks" class="card">
     <div class="sec-header">
-      <h2>1. Empirical Benchmark Results &amp; Root-Cause Diagnosis</h2>
+      <h2>2. Empirical Benchmark Results &amp; Root-Cause Diagnosis</h2>
       <span class="sec-tag">Measured on Identical Workload (10 URLs · 3 Rewrites · 13 Rules · 2.0 MB Chrome Local State)</span>
     </div>
 
@@ -441,168 +516,135 @@
         </tr>
       </tbody>
     </table>
-
-    <h3>Why Current Finicky Uses 100–200 MB RAM &amp; 17+ ms Per Click</h3>
-    <div class="grid-2">
-      <div class="subbox">
-        <h4>Memory Culprits in <code>apps/finicky/src/</code></h4>
-        <ul>
-          <li><strong><code>goja-babel</code> (+146.8 MB RSS spike)</strong>: <code>configfiles.go:196</code> calls <code>babel.Init(1)</code>, loading a 2.6 MB <code>babel.min.js</code> compiler into a Goja VM pool solely for <code>transform-named-capturing-groups-regex</code>.</li>
-          <li><strong>320 KB <code>finickyConfigAPI.js</code> inside Goja</strong>: Bundles <code>core-js</code> URL polyfills and <code>zod</code> into the Goja interpreter even for simple JSON rules.</li>
-          <li><strong>Eager WebView Asset Allocation &amp; Leaky Window</strong>: <code>window.go:73</code> (<code>init()</code>) copies all Svelte UI assets into Objective-C <code>NSMutableDictionary</code> buffers at boot; <code>window.m:68</code> sets <code>[window setReleasedWhenClosed:NO]</code>, keeping <code>WKWebView</code> alive forever once opened.</li>
-        </ul>
-      </div>
-      <div class="subbox">
-        <h4>Latency Culprits on Every URL Click</h4>
-        <ul>
-          <li><strong>Per-Click Zod Schema Validation (<code>6.8 MB</code> / <code>109k</code> allocs)</strong>: <code>packages/config-api/src/index.ts:84</code> runs <code>ConfigSchema.parse(config)</code> inside <code>openUrl()</code> on every single click.</li>
-          <li><strong>Uncached <code>Local State</code> Parsing (<code>3.66 MB</code> / <code>7.5 ms</code>)</strong>: <code>launcher.go:205</code> reads and unmarshals Chrome's multi-MB <code>Local State</code> JSON into <code>map[string]interface{}</code> on every click.</li>
-          <li><strong>Unconditional Accessibility IPC &amp; <code>/usr/bin/open</code> Fork</strong>: <code>main.m:289</code> queries <code>AXUIElementCopyAttributeValue</code> for <code>windowTitle</code> even when no rule uses it; <code>launcher.go:97</code> forks <code>/usr/bin/open</code> and blocks on pipes.</li>
-        </ul>
-      </div>
-    </div>
   </section>
 
-  <!-- SECTION 2: COMPETITIVE DEEP DIVE -->
+  <!-- SECTION 3: COMPETITIVE DEEP DIVE -->
   <section id="sec-research" class="card">
     <div class="sec-header">
-      <h2>2. Existing Rust &amp; Native Alternatives — Deep Dive &amp; How Browsify Improves on Them</h2>
+      <h2>3. Existing Rust &amp; Native Alternatives — How Browsify Improves on Grinch &amp; Finch</h2>
       <span class="sec-tag">Source-Level Analysis of Grinch (Rust) &amp; Finch (Swift)</span>
     </div>
-    <p>
-      We audited the source code of the two closest modern alternatives: <strong><code>jamtur01/grinch</code></strong> (a Rust + <code>objc2</code> + macOS <code>JavaScriptCore</code> router) and <strong><code>expelledboy/finch</code></strong> (~650 LOC Swift + <code>JavaScriptCore</code>). While both validate the compiler-first native routing approach, Browsify improves on them across six architectural dimensions:
-    </p>
     <div class="grid-3">
       <div class="subbox">
-        <h4>1. Lower Memory via Ephemeral QuickJS <span class="ok">5.1 MB vs 15.5 MB</span></h4>
+        <h4>1. Ephemeral QuickJS <span class="ok">5.1 MB vs 15.5 MB</span></h4>
         <ul>
-          <li><code>Grinch</code> links macOS <code>JavaScriptCore</code> and holds a live <code>Retained&lt;JSContext&gt;</code> in <code>LoadedConfig</code> for the entire lifetime of the process (~15.5 MB RSS), even when 100% of rules are declarative.</li>
-          <li><strong>Browsify Improvement</strong>: Uses <code>rquickjs</code> (~550 KB dirty RAM) and <strong>drops the JS runtime completely after config load</strong> whenever all rules/rewrites compile to native Rust matchers (~4.5 MB RSS).</li>
+          <li><code>Grinch</code> links macOS <code>JavaScriptCore</code> and holds a live <code>Retained&lt;JSContext&gt;</code> for the lifetime of the process (~15.5 MB RSS).</li>
+          <li><strong>Browsify</strong>: Uses <code>rquickjs</code> (~550 KB dirty RAM) and drops the JS runtime completely when all rules lower to native Rust (~4.5 MB RSS).</li>
         </ul>
       </div>
       <div class="subbox">
         <h4>2. Smarter Profile Cache <span class="ok">mtime + Typed Serde</span></h4>
         <ul>
-          <li><code>Grinch</code> (<code>src/chromium.rs:64</code>) parses Chrome's entire <code>Local State</code> into a heap-heavy <code>serde_json::Value</code> tree, never checks file <code>mtime</code> (requiring manual "Reload Config" if profiles change), and caches transient read failures as permanent empty maps.</li>
-          <li><strong>Browsify Improvement</strong>: Deserializes only <code>profile.info_cache.*.name</code> via a zero-waste typed <code>serde</code> struct (<code>659 µs</code> cold) and auto-invalidates via <code>(mtime_ns, size)</code> stat check (<code>0.87 µs</code> warm).</li>
+          <li><code>Grinch</code> parses Chrome's entire <code>Local State</code> into a <code>serde_json::Value</code> tree, ignores file <code>mtime</code>, and caches transient read failures permanently.</li>
+          <li><strong>Browsify</strong>: Deserializes only <code>profile.info_cache.*</code> via typed <code>serde</code> structs (<code>659 µs</code> cold) and auto-invalidates via <code>(mtime_ns, size)</code> stat checks (<code>0.87 µs</code> warm).</li>
         </ul>
       </div>
       <div class="subbox">
         <h4>3. True Finicky v3/v4 Compatibility <span class="ok">Zero Breakage</span></h4>
         <ul>
-          <li><code>Grinch</code> changes bare string semantics (<code>"github.com"</code> matches subdomains in Grinch vs exact URL in Finicky), rejects <code>.finicky.ts</code>, fails on <code>import</code> / named exports, throws <code>TypeError</code> on <code>finicky.getPowerInfo()</code> and <code>finicky.notify()</code>, and drops <code>rules.json</code> &amp; short-URL expansion.</li>
-          <li><strong>Browsify Improvement</strong>: Preserves 100% of Finicky v4 &amp; v3 semantics, auto-loads <code>~/.finicky.{js,ts}</code> and <code>rules.json</code>, and ships <code>browsify migrate</code>.</li>
+          <li><code>Grinch</code> alters bare string semantics, rejects <code>.finicky.ts</code>, fails on <code>finicky.getPowerInfo()</code>, and drops <code>rules.json</code> &amp; short-URL expansion.</li>
+          <li><strong>Browsify</strong>: Preserves 100% of Finicky v3 &amp; v4 semantics, supports <code>.js</code>/<code>.ts</code>/<code>.toml</code>/<code>rules.json</code>, and ships <code>browsify migrate</code>.</li>
         </ul>
       </div>
       <div class="subbox">
         <h4>4. Profile Window Focus &amp; Spaces Fix <span class="ok">Issues #501 &amp; #550</span></h4>
         <ul>
-          <li>Both Finicky (<code>open -n</code>) and Grinch (<code>setCreatesNewApplicationInstance(true)</code>) spawn a transient second browser process when passing <code>--profile-directory</code>. When that helper forwards IPC to the running browser and exits, macOS often fails to focus the target window or switches to the wrong Space.</li>
-          <li><strong>Browsify Improvement</strong>: Performs explicit post-handoff window activation and supports Chrome PWA <code>--app-id</code> &amp; Arc Space routing.</li>
+          <li>Spawning a transient helper browser instance with <code>--profile-directory</code> drops macOS window focus when the helper exits.</li>
+          <li><strong>Browsify</strong>: Uses direct <code>NSWorkspace</code> launching and invokes <code>NSRunningApplication::activateWithOptions</code> on the primary browser process after handoff.</li>
         </ul>
       </div>
       <div class="subbox">
         <h4>5. Visual Rules UI with 0 MB Idle RAM <span class="ok">Best of Both Worlds</span></h4>
         <ul>
-          <li>Finicky keeps a heavy <code>WKWebView</code> in memory forever; Grinch and Finch deleted the GUI entirely (CLI only).</li>
-          <li><strong>Browsify Improvement</strong>: Keeps the rich <code>packages/finicky-ui</code> Svelte interface (Rule Builder, URL Tester, Profile Picker, Log Viewer), served on-demand over <code>127.0.0.1:0</code> in the user's browser with <strong>0 MB idle RAM</strong>.</li>
+          <li>Finicky keeps a heavy <code>WKWebView</code> in memory forever; Grinch and Finch deleted the GUI entirely.</li>
+          <li><strong>Browsify</strong>: Serves the Svelte 5 UI (<code>apps/browsify-ui</code>) over an ephemeral token-authenticated <code>127.0.0.1:0</code> server with 0 MB idle RAM.</li>
         </ul>
       </div>
       <div class="subbox">
         <h4>6. Cross-Platform Core &amp; CI Testability <span class="ok">Linux + macOS</span></h4>
         <ul>
-          <li><code>Grinch</code> and <code>Finch</code> tightly couple their JS engine to Apple's Objective-C <code>JavaScriptCore</code>, making their core config/routing engine impossible to compile or test on Linux CI.</li>
-          <li><strong>Browsify Improvement</strong>: <code>browsify-core</code>, <code>browsify-js</code>, and <code>browsify-ui-server</code> are 100% platform-agnostic Rust + <code>rquickjs</code>; only <code>browsify-macos</code> touches <code>objc2</code>.</li>
+          <li><code>Grinch</code> and <code>Finch</code> couple their config engine to macOS <code>JavaScriptCore</code>, preventing Linux compilation/testing.</li>
+          <li><strong>Browsify</strong>: <code>packages/browsify-core</code> and <code>packages/browsify-js</code> compile and pass 100% of tests on both Linux and macOS.</li>
         </ul>
       </div>
     </div>
   </section>
 
-  <!-- SECTION 3: RUST WORKSPACE ARCHITECTURE -->
+  <!-- SECTION 4: WORKSPACE & HYBRID PIPELINE -->
   <section id="sec-architecture" class="card">
     <div class="sec-header">
-      <h2>3. Rust Cargo Workspace &amp; Module Architecture</h2>
-      <span class="sec-tag">Clean Separation of Platform-Agnostic Engine and macOS AppKit Glue</span>
+      <h2>4. Workspace Layout &amp; Safe Hybrid Execution Pipeline</h2>
+      <span class="sec-tag">Standardized on Existing Workspace + Legacy Removal</span>
     </div>
 
     <pre><code>browsify/
-├── Cargo.toml                        # Workspace root (lto = "thin", codegen-units = 1, strip = true)
-├── PLAN.html                         # This specification &amp; architectural blueprint
-├── crates/
-│   ├── browsify-core/                # Pure Rust routing, URL rewriting, rules.json/TOML, &amp; profile resolution
+├── Cargo.toml                        # Workspace root: packages/browsify-core, packages/browsify-js, apps/browsify
+├── GLOSSARY.md                       # Canonical domain language
+├── PLAN.html                         # Revised technical specification &amp; architecture plan
+├── docs/
+│   ├── agents/                       # Agent instructions (domain.md, issue-tracker.md, triage-labels.md)
+│   └── adr/                          # Architectural Decision Records (0001, 0002)
+├── packages/
+│   ├── browsify-core/                # Pure Rust router, matchers, transforms, ProfileResolver, rules.json &amp; TOML
 │   │   └── src/
-│   │       ├── lib.rs
-│   │       ├── config.rs             # CompiledConfig, Rule, RewriteRule, BrowserSpec, AppType, Options
-│   │       ├── matcher.rs            # Wildcard compiler, RegexSet/Regex matcher, Hostname/Domain &amp; Opener matchers
-│   │       ├── rewriter.rs           # Native URL rewrites (strip tracking params, protocol/host transforms)
-│   │       ├── router.rs             # Hot-path URL resolver (2.35 µs end-to-end)
-│   │       ├── profiles/
-│   │       │   ├── mod.rs            # Unified ProfileResolver with (path, mtime_ns, size) cache
-│   │       │   ├── chromium.rs       # 19+ Chromium browsers: Local State typed serde parser
-│   │       │   ├── firefox.rs        # Firefox/Zen/Waterfox/LibreWolf: profiles.ini + FF 136+ SQLite Profile Groups
-│   │       │   └── containers.rs     # Firefox Multi-Account Containers (ext+container: URI transform)
-│   │       ├── shorturl.rs           # Embedded shortener_domains.json + bounded HTTP HEAD/GET redirect expander
-│   │       └── rules_file.rs         # Finicky v4 rules.json &amp; native browsify.toml load/save/merge
+│   │       ├── lib.rs                # Domain types: OpenerInfo, ModifierKeys, SystemInfo, PowerInfo
+│   │       ├── browser.rs            # BrowserTarget (BrowserConfig), AppType, BrowserFamily, 27-browser registry
+│   │       ├── wildcard.rs           # Finicky-compatible wildcard compiler &amp; matcher
+│   │       ├── router.rs             # CompiledMatcher, CompiledTransform, NativeRouter, protocol URL decoder
+│   │       ├── rules.rs              # UI Rules File (rules.json) &amp; Primary Config (config.toml) serde
+│   │       ├── profile.rs            # ProfileResolver, Profile Selector resolution, LaunchPlan builder
+│   │       ├── sqlite_profiles.rs    # Zero-C-dep SQLite B-tree reader for Firefox 136+ Profile Groups
+│   │       ├── shorturl.rs           # 256-entry LRU cache + macOS NSURLSession / bounded redirect expander
+│   │       └── migrate.rs            # Declarative config.toml exporter
 │   │
-│   ├── browsify-js/                  # rquickjs (QuickJS-ng) runtime + Finicky v3/v4 JS/TS compatibility layer
-│   │   └── src/
-│   │       ├── lib.rs
-│   │       ├── transpile.rs          # Lightweight TS type-stripping + ESM `export default` -> CJS transform
-│   │       ├── prelude.js            # FinickyURL, LegacyURLObject, finicky.* utilities, &amp; marker compilers
-│   │       ├── compiler.rs           # Walks JS config export: compiles static rules to browsify-core, keeps JS fns
-│   │       ├── bridge.rs             # Lazy host callbacks: getModifierKeys, getPowerInfo, getSystemInfo, isAppRunning
-│   │       └── migrate.rs            # Inspects .finicky.js/.ts and exports pure config.toml / rules.json
-│   │
-│   ├── browsify-ui-server/           # On-demand 127.0.0.1 HTTP server for packages/finicky-ui (0 MB idle RAM)
-│   │   └── src/
-│   │       ├── lib.rs
-│   │       ├── assets.rs             # Embedded dist/ assets from packages/finicky-ui (or disk fallback)
-│   │       └── api.rs                # REST/SSE bridge matching finicky.sendMessage / receiveMessage protocol
-│   │
-│   ├── browsify-macos/               # macOS AppKit / LaunchServices / AppleEvents / SSO host via objc2
-│   │   └── src/
-│   │       ├── lib.rs
-│   │       ├── app_delegate.rs       # NSApplication (LSUIElement), kAEGetURL, openFile:, NSUserActivity (Handoff)
-│   │       ├── status_item.rs        # NSStatusBar icon, error badge, recent routed URLs menu, "Open Rules UI"
-│   │       ├── workspace.rs          # NSWorkspace launch plans, post-launch profile focus handoff, running apps cache
-│   │       ├── accessibility.rs      # Lazy AXUIElement focused windowTitle lookup (only when a rule reads it)
-│   │       ├── modifiers.rs          # CGEventSourceFlagsState session modifier flags
-│   │       ├── power.rs              # IOKit IOPSCopyPowerSourcesInfo for finicky.getPowerInfo()
-│   │       ├── sso_session.rs        # ASWebAuthenticationSessionWebBrowserSessionManager handler
-│   │       └── singleton.rs          # flock(/tmp/browsify-uid/startup.lock) + duplicate instance terminator
-│   │
-│   └── browsify-cli/                 # Main binary (`browsify` / `Browsify.app/Contents/MacOS/Browsify`)
+│   └── browsify-js/                  # rquickjs runtime, safe marker lowering, &amp; ordered hybrid pipeline
 │       └── src/
-│           └── main.rs               # CLI flags (--test, --validate, --migrate, --list-browsers, --list-profiles, --ui)
-└── packages/
-    └── finicky-ui/                   # Existing Svelte 5 UI (connected via browsify-ui-server)</code></pre>
+│           ├── lib.rs                # HybridEngine: ordered Vec&lt;HybridRewrite&gt; &amp; Vec&lt;HybridHandler&gt;
+│           ├── prelude.rs            # FinickyURL, LegacyURLObject, finicky.* marker helpers, rust URL bridge
+│           └── preprocess.rs         # TS type-stripping + ESM `export default` transform
+│
+├── apps/
+│   ├── browsify/                     # Main binary (`browsify` CLI + `Browsify.app/Contents/MacOS/browsify` daemon)
+│   │   ├── assets/                   # Info.plist (com.lavenxsnow.browsify), icons, browsify.d.ts, finicky.d.ts
+│   │   └── src/
+│   │       ├── main.rs               # Entry point: dispatches CLI subcommands or starts macOS AppKit daemon
+│   │       ├── config_loader.rs      # Primary Config + UI Rules File precedence, hot-reload, profile validation
+│   │       ├── launcher.rs           # Direct NSWorkspace launch &amp; post-handoff NSRunningApplication activation
+│   │       ├── macos.rs              # objc2 NSApplication delegate, kAEGetURL, Handoff, SSO, StatusBar, AX, IOKit
+│   │       └── ui_server.rs          # Token-authenticated 127.0.0.1:0 HTTP/SSE server with 30s idle auto-stop
+│   │
+│   ├── browsify-ui/                  # Svelte 5 Visual Rules Builder, URL Tester, Profile Selector, &amp; Log Viewer
+│   └── browser-addon/                # Chrome/Firefox WebExtension ("Open with Browsify" -> browsify://open/...)
+└── scripts/
+    ├── build.sh                      # Builds apps/browsify-ui + Rust universal/native Browsify.app bundle
+    └── test.sh                       # Runs cargo test --workspace + UI typecheck</code></pre>
 
-    <h3>The Hybrid Compiler + Ephemeral QuickJS Execution Model</h3>
+    <h3>Safe Marker-Based Lowering &amp; Ordered Hybrid Pipeline (<code>packages/browsify-js</code>)</h3>
     <div class="grid-2">
       <div class="subbox">
-        <h4>Case A: Purely Declarative Config (<code>~4.5 MB RSS · 2.35 µs/URL</code>)</h4>
-        <ol>
-          <li>User has <code>rules.json</code>, <code>browsify.toml</code>, or a <code>~/.finicky.js</code> whose <code>rewrite</code> and <code>handlers</code> entries use wildcard strings, arrays, regexes, or built-in helpers (<code>finicky.matchHostnames</code>, <code>strip()</code>).</li>
-          <li><code>browsify-js</code> evaluates the file once in <code>rquickjs</code>, extracts all rules into native <code>browsify_core::CompiledConfig</code> structs, and <strong>drops the <code>rquickjs::Runtime</code> and <code>Context</code> immediately</strong>.</li>
-          <li>Every URL click runs 100% in native Rust with zero JS engine in memory.</li>
-        </ol>
+        <h4>1. No Regex Guessing on <code>fn.toString()</code></h4>
+        <ul>
+          <li>Arbitrary JS functions are <strong>never</strong> regex-sniffed via <code>Function.prototype.toString()</code>, preventing miscompilation of conditional closures.</li>
+          <li>Only declarative values (wildcard strings, <code>RegExp</code> instances, arrays, static browser objects) and explicit helper markers (<code>finicky.matchHostnames</code>, <code>finicky.matchDomains</code>, <code>finicky.stripParams</code>, <code>finicky.matchOpener</code>, <code>finicky.forceHttps</code>, <code>finicky.replaceHost</code>) lower to native <code>browsify-core</code> steps.</li>
+        </ul>
       </div>
       <div class="subbox">
-        <h4>Case B: Config with Dynamic JS Functions (<code>~5.1 MB RSS · 42.5 µs/URL</code>)</h4>
-        <ol>
-          <li>User's <code>~/.finicky.js</code> contains custom JS closures, e.g. <code>match: ({ url, opener }) =&gt; ...</code> or <code>url: (url) =&gt; ...</code>.</li>
-          <li>Static rules ahead of the closure still compile to native Rust matchers (if an earlier native rule matches, JS is never entered!).</li>
-          <li>Only when evaluation reaches a JS closure does Browsify invoke the compiled function handle inside <code>rquickjs</code> (~550 KB dirty heap).</li>
-        </ol>
+        <h4>2. Interleaved Native + QuickJS Pipeline</h4>
+        <ul>
+          <li>Rewrites compile to <code>Vec&lt;HybridRewrite&gt;</code> (<code>Native(CompiledRewrite)</code> or <code>Js(usize)</code>) and handlers compile to <code>Vec&lt;HybridHandler&gt;</code> (<code>Native(CompiledHandler)</code> or <code>Js(usize)</code>).</li>
+          <li>During URL resolution, <code>(current_url, original_url, opener)</code> flows through each step in order: static steps execute in native Rust (~1 µs), and QuickJS is entered only when a <code>Js(index)</code> step is reached.</li>
+          <li>QuickJS <code>URL</code> parsing delegates to a Rust <code>url::Url</code> host helper for 100% identical WHATWG URL behavior (IPv6, punycode, relative paths).</li>
+          <li>When 0 <code>Js(index)</code> steps exist, <code>rquickjs::Runtime</code> and <code>Context</code> are dropped immediately after config load.</li>
+        </ul>
       </div>
     </div>
   </section>
 
-  <!-- SECTION 4: BROWSER & PROFILE ENGINE -->
+  <!-- SECTION 5: BROWSER, PROFILE & MACOS DAEMON -->
   <section id="sec-profiles" class="card">
     <div class="sec-header">
-      <h2>4. Browser Discovery, Profile Resolution &amp; Window Focus Engine</h2>
-      <span class="sec-tag">Solving Finicky Issues #295, #431, #440, #456, #501, #513, #550</span>
+      <h2>5. Browser Discovery, Profile Resolution &amp; macOS AppKit Daemon</h2>
+      <span class="sec-tag">Bundle ID: com.lavenxsnow.browsify · Native NSWorkspace &amp; objc2</span>
     </div>
 
     <table>
@@ -610,203 +652,129 @@
         <tr>
           <th>Family</th>
           <th>Supported Browsers (Bundle ID &amp; App Name)</th>
-          <th>Profile Storage &amp; Discovery Mechanism</th>
-          <th>Launch Arguments Generated</th>
+          <th>Profile Selector &amp; Discovery Mechanism</th>
+          <th>Launch Plan Arguments</th>
         </tr>
       </thead>
       <tbody>
         <tr>
-          <td><strong>Chromium (19+)</strong></td>
-          <td>Google Chrome (Stable/Beta/Dev/Canary), Brave (Stable/Beta/Nightly), Microsoft Edge (Stable/Beta/Dev), Vivaldi, Chromium, Arc, Dia, Helium, Comet, Wavebox, Opera, Opera GX, Yandex</td>
+          <td><strong>Chromium (20+)</strong></td>
+          <td>Google Chrome (Stable/Beta/Dev/Canary), Brave (Stable/Beta/Nightly), Microsoft Edge (Stable/Beta/Dev), Vivaldi, Chromium, Dia, Helium, Comet, Wavebox, Opera, Opera GX, Yandex, Arc</td>
           <td>
-            1. Fast-path: <code>"Default"</code> or <code>"Profile N"</code> requires zero disk I/O.<br>
-            2. Display name lookup in <code>~/Library/Application Support/&lt;Dir&gt;/Local State</code> → <code>profile.info_cache.*.name</code> via typed <code>serde</code> struct, cached in memory by <code>(mtime_ns, file_size)</code>.
+            1. Fast-path: <code>"Default"</code> or <code>"Profile N"</code>.<br>
+            2. Display name, case-insensitive name, or signed-in email lookup in <code>~/Library/Application Support/&lt;Dir&gt;/Local State</code> → <code>profile.info_cache.*</code> via typed <code>serde</code> struct, cached by <code>(mtime_ns, size)</code>.
           </td>
-          <td><code>--profile-directory=&lt;Dir&gt;</code><br>Plus optional PWA <code>--app-id=&lt;id&gt;</code> or <code>--incognito</code></td>
+          <td><code>--profile-directory=&lt;Dir&gt;</code><br>Optional PWA <code>--app-id=&lt;id&gt;</code> or <code>--app=&lt;url&gt;</code></td>
         </tr>
         <tr>
           <td><strong>Firefox (6+)</strong></td>
           <td>Firefox, Firefox Developer Edition, Firefox Nightly, Zen Browser (<code>app.zen-browser.zen</code>), Waterfox, LibreWolf</td>
           <td>
             1. <code>profiles.ini</code> section <code>Name=...</code> lookup.<br>
-            2. Firefox 136+ Selectable Profile Groups: reads <code>Profile Groups/*.sqlite</code> (<code>SELECT name, path FROM Profiles</code>).<br>
+            2. Firefox 136+ Selectable Profile Groups: pure-Rust B-tree reader on <code>Profile Groups/*.sqlite</code>.<br>
             3. Explicit directory path (<code>~/...</code> or <code>/Users/...</code>).
           </td>
-          <td>Legacy: <code>-P &lt;Name&gt;</code><br>FF 136+ Group / Path: <code>--profile &lt;Dir&gt;</code><br>Private: <code>--private-window</code></td>
+          <td>Legacy: <code>-P &lt;Name&gt;</code><br>FF 136+ Group / Path: <code>--profile &lt;Dir&gt;</code></td>
         </tr>
         <tr>
           <td><strong>Firefox Containers</strong></td>
           <td>Firefox, Zen, LibreWolf, Waterfox (with Open external links in a container extension)</td>
-          <td>Rule specifies <code>container: "Work"</code> (or <code>profile: "container:Work"</code>).</td>
+          <td>Rule specifies <code>container: "Work"</code> or <code>profile: "container:Work"</code> (supported in TOML, JS/TS, and <code>rules.json</code>).</td>
           <td>Rewrites URL to <code>ext+container:name=Work&amp;url=&lt;encoded_url&gt;</code></td>
         </tr>
         <tr>
           <td><strong>Safari &amp; WebKit</strong></td>
-          <td>Safari (<code>com.apple.Safari</code>), Safari Technology Preview, Orion (<code>com.kagi.kagimacOS</code>)</td>
-          <td>Direct <code>NSWorkspace.openURLs</code> handoff (no <code>/usr/bin/open</code> fork).</td>
-          <td>Native AppleEvent GURL delivery</td>
+          <td>Safari (<code>com.apple.Safari</code>)</td>
+          <td>Direct <code>NSWorkspace</code> URL handoff.</td>
+          <td>Native LaunchServices delivery</td>
         </tr>
       </tbody>
     </table>
 
-    <h3>Fixing the Chromium Multi-Profile Focus &amp; macOS Spaces Bug (Issues #501 &amp; #550)</h3>
-    <p>
-      When a Chromium browser is already running and a link is routed to a specific <code>profile</code>, macOS's <code>NSWorkspace.openURLs</code> ignores command-line arguments. Both Finicky (<code>open -n -a ... --args --profile-directory=...</code>) and Grinch (<code>setCreatesNewApplicationInstance(true)</code>) work around this by spawning a second instance of the browser binary, which passes the <code>--profile-directory</code> argv over Mach IPC to the main browser process and immediately exits. However, because the newly spawned child process exits within milliseconds, macOS drops window activation—causing the link to open silently in the background (#501) or leaving focus on the wrong profile's window across macOS Spaces (#550).
-    </p>
-    <div class="subbox">
-      <h4>Browsify's 3-Step Profile Launch &amp; Focus Protocol</h4>
-      <ol>
-        <li><strong>Fast Path (No Profile / No Custom Args)</strong>: Calls <code>NSWorkspace.openURLs_withApplicationAtURL_configuration_completionHandler</code> with <code>createsNewApplicationInstance = false</code> and <code>addsToRecentItems = false</code>. LaunchServices delivers the URL directly via AppleEvent to the running browser.</li>
-        <li><strong>Profile / Custom Args Path</strong>: Calls <code>NSWorkspace.openApplicationAtURL_configuration_completionHandler</code> with <code>arguments = ["--profile-directory=...", ..., url]</code> and <code>createsNewApplicationInstance = true</code>.</li>
-        <li><strong>Post-Handoff Foreground Activation (when <code>openInBackground == false</code>)</strong>: In the completion handler (once the helper process hands off to the primary browser PID), Browsify locates the primary running <code>NSRunningApplication</code> for that bundle ID and invokes <code>activateWithOptions(NSApplicationActivateAllWindows)</code> so macOS switches to the Space and window where the profile tab just opened.</li>
-      </ol>
+    <h3>macOS AppKit Daemon &amp; Native System Integration (<code>apps/browsify/src/macos.rs</code>)</h3>
+    <div class="grid-3">
+      <div class="subbox">
+        <h4>1. Event Loop &amp; URL Interception</h4>
+        <ul>
+          <li>Runs as an <code>LSUIElement</code> agent when invoked with no CLI subcommand or <code>--window</code>.</li>
+          <li>Handles <code>kInternetEventClass</code> / <code>kAEGetURL</code> AppleEvents, <code>application:openFile:</code>, <code>NSUserActivityTypeBrowsingWeb</code> (Handoff), and <code>ASWebAuthenticationSession</code> SSO callbacks.</li>
+          <li>Enforces single-instance execution via non-blocking <code>flock</code> (<code>/tmp/browsify-startup-&lt;uid&gt;/startup.lock</code>) + duplicate bundle-ID termination.</li>
+        </ul>
+      </div>
+      <div class="subbox">
+        <h4>2. Lazy OS Queries &amp; Short URLs</h4>
+        <ul>
+          <li><strong>Lazy Accessibility</strong>: Queries <code>AXUIElementCopyAttributeValue</code> for <code>opener.windowTitle</code> <em>only</em> when <code>uses_window_title == true</code> on the active config.</li>
+          <li><strong>Lazy Host Callbacks</strong>: <code>getModifierKeys()</code> (CoreGraphics), <code>getPowerInfo()</code> (IOKit), <code>getSystemInfo()</code>, and <code>isAppRunning()</code> execute on-demand when invoked by JS.</li>
+          <li><strong>Short-URL Expansion</strong>: Uses macOS <code>NSURLSession</code> (750 ms timeout, max 3 redirects, 0 KB TLS binary bloat) + a 256-entry LRU cache.</li>
+        </ul>
+      </div>
+      <div class="subbox">
+        <h4>3. Status Bar, Hot-Reload &amp; Focus Fix</h4>
+        <ul>
+          <li><strong>Menu Bar</strong>: Mode/Status header, <code>Rules &amp; URL Tester…</code>, 10-item <code>Recent URLs</code> submenu, <code>Set as Default Browser</code>, <code>Edit Config…</code>, <code>Reload Config</code>, and <code>Quit Browsify</code>.</li>
+          <li><strong>File Watcher</strong>: Watches Primary Config and <code>rules.json</code> via <code>kqueue</code>/polling to hot-reload rules and update the error badge automatically.</li>
+          <li><strong>Focus Handoff (#501/#550)</strong>: Direct <code>NSWorkspace</code> launch + <code>NSRunningApplication::activateWithOptions</code> after helper exit.</li>
+        </ul>
+      </div>
     </div>
   </section>
 
-  <!-- SECTION 5: FINICKY COMPATIBILITY & MIGRATION -->
+  <!-- SECTION 6: CONFIG PRECEDENCE & MIGRATION -->
   <section id="sec-compat" class="card">
     <div class="sec-header">
-      <h2>5. Finicky v3 &amp; v4 Compatibility + Migration CLI</h2>
-      <span class="sec-tag">Zero-Friction Transition for Existing Finicky Users</span>
+      <h2>6. Configuration Precedence, Telemetry Policy &amp; Migration CLI</h2>
+      <span class="sec-tag">Deterministic Precedence Across Primary Config &amp; UI Rules File</span>
     </div>
 
     <div class="grid-2">
       <div class="subbox">
-        <h4>Automatic Config File Search Order</h4>
+        <h4>Evaluation &amp; Fallback Precedence</h4>
         <ol>
-          <li>Custom path via <code>--config &lt;path&gt;</code></li>
-          <li><code>~/.config/browsify/config.toml</code> or <code>~/.config/browsify/browsify.js</code> / <code>.ts</code></li>
-          <li><code>~/.browsify.js</code> / <code>~/.browsify.ts</code></li>
-          <li><code>~/.finicky.js</code> / <code>~/.finicky.ts</code></li>
-          <li><code>~/.config/finicky.js</code> / <code>~/.config/finicky.ts</code></li>
-          <li><code>~/.config/finicky/finicky.js</code> / <code>~/.config/finicky/finicky.ts</code></li>
+          <li><strong>Primary Config Rewrites</strong> (<code>config.toml</code> or <code>.{browsify,finicky}.{js,ts}</code>) mutate the URL in order.</li>
+          <li><strong>Primary Config Handlers</strong> are evaluated first.</li>
+          <li><strong>UI Rules File Handlers</strong> (<code>rules.json</code>) are evaluated next as fallback handlers.</li>
+          <li><strong>Default Browser &amp; Options Inheritance</strong>: If the Primary Config omits <code>default_browser</code> or any <code>options</code> field, Browsify inherits the setting from <code>rules.json</code> (and the UI displays a lock/override badge when a setting is explicitly defined by the Primary Config).</li>
         </ol>
-        <p class="muted" style="margin-top:8px;">
-          In addition, JSON rules are automatically loaded from <code>~/Library/Application Support/Browsify/rules.json</code> (falling back to <code>~/Library/Application Support/Finicky/rules.json</code>) and merged as lower-priority handlers just like Finicky v4.
-        </p>
       </div>
-
       <div class="subbox">
-        <h4>Supported Finicky v3 &amp; v4 API Surface</h4>
+        <h4>Zero Telemetry &amp; Update Check Policy</h4>
         <ul>
-          <li><strong>Module Formats</strong>: ES Module <code>export default { ... }</code>, CommonJS <code>module.exports = { ... }</code>, and TypeScript type annotations (<code>import type ...</code>, <code>url: URL</code>, <code>satisfies FinickyConfig</code>).</li>
-          <li><strong>URL Objects</strong>: Full WHATWG <code>URL</code> + <code>URLSearchParams</code> + <code>FinickyURL</code> with legacy v3 getters (<code>url.urlString</code>, <code>url.url</code> returning <code>{protocol, username, password, host, port, pathname, search, hash}</code>, and <code>url.opener</code>).</li>
-          <li><strong><code>finicky.*</code> Global Utilities</strong>:
-            <code>finicky.matchHostnames(...)</code>, <code>finicky.matchDomains(...)</code>, <code>finicky.getModifierKeys()</code>, <code>finicky.getSystemInfo()</code>, <code>finicky.getPowerInfo()</code>, <code>finicky.isAppRunning(id)</code>, and <code>finicky.notify(title, subtitle)</code>.</li>
-          <li><strong>Browser Extension Protocol</strong>: Handles both <code>finicky://open/&lt;base64&gt;</code> and <code>browsify://open/&lt;base64&gt;</code> so existing Chrome/Firefox Finicky extensions work without modification.</li>
+          <li>Legacy Finicky's custom <code>API_HOST</code> telemetry/update endpoint is completely removed.</li>
+          <li><code>check_for_updates</code> defaults to <strong><code>false</code></strong> so Browsify makes zero background network requests unless explicitly opted in.</li>
+          <li>When <code>check_for_updates = true</code>, Browsify queries GitHub Releases (<code>https://api.github.com/repos/snowaxe/browsify/releases/latest</code>) at most once per 24 hours, caching the result in <code>~/Library/Caches/Browsify/last_update_check.json</code>.</li>
         </ul>
       </div>
     </div>
-
-    <h3>Built-In Migration &amp; Diagnostic CLI (<code>browsify migrate</code>)</h3>
-    <pre><code>$ browsify migrate --check ~/.finicky.js
-✓ Loaded ~/.finicky.js (Finicky v4 ESM syntax)
-✓ 3 rewrite rules: 2 compiled to Native Rust, 1 uses QuickJS function
-✓ 8 handler rules: 7 compiled to Native Rust, 1 uses QuickJS function
-✓ Merged 2 rules from ~/Library/Application Support/Finicky/rules.json
-✓ Verified browser profiles:
-  • Google Chrome → "Work" (resolved to "Profile 1")
-  • Google Chrome → "Personal" (resolved to "Default")
-  • Firefox → "default-release" (resolved in profiles.ini)
-
-$ browsify migrate --export-toml ~/.config/browsify/config.toml
-✓ Exported declarative rules to ~/.config/browsify/config.toml (enables 0-JS 2.35 µs fast path)</code></pre>
   </section>
 
-  <!-- SECTION 6: ON-DEMAND LOCALHOST UI -->
+  <!-- SECTION 7: ON-DEMAND LOCALHOST UI & SECURITY -->
   <section id="sec-ui" class="card">
     <div class="sec-header">
-      <h2>6. Zero-Idle-RAM Configuration &amp; Rules UI</h2>
-      <span class="sec-tag">Reusing packages/finicky-ui Over Ephemeral 127.0.0.1 HTTP</span>
+      <h2>7. Token-Authenticated On-Demand Localhost UI &amp; Rebranding</h2>
+      <span class="sec-tag">0 MB Idle RAM · CSRF-Protected Loopback Server · MIT Attribution</span>
     </div>
-    <p>
-      In Finicky v4, <code>apps/finicky/src/window/window.go</code> embeds the built <code>packages/finicky-ui</code> Svelte application and loads it into an in-process <code>WKWebView</code> that never deallocates when closed. Browsify keeps the exact same Svelte UI experience (Start Page, Visual Rule Editor, URL Tester, Browser Profile Selector, Log Viewer) with <strong>0 MB of idle memory</strong>:
-    </p>
+
     <div class="grid-3">
       <div class="subbox">
-        <h4>1. Idle State (0 MB UI RAM)</h4>
+        <h4>1. Session Token &amp; Origin Security</h4>
         <p class="muted">
-          The resident daemon does not link <code>WebKit.framework</code> and does not copy HTML/CSS/PNG buffers into Objective-C dictionaries at startup.
+          When launched via menu bar or <code>browsify ui</code>, the server binds to <code>127.0.0.1:0</code>, generates a random 128-bit session token, and opens <code>http://127.0.0.1:&lt;port&gt;/?token=&lt;hex&gt;</code>. All <code>/api/rpc</code> and <code>/api/events</code> requests verify both the session token header/query and loopback <code>Host</code>/<code>Origin</code>.
         </p>
       </div>
       <div class="subbox">
-        <h4>2. On-Demand Launch</h4>
+        <h4>2. SSE Log Stream &amp; 30s Auto-Stop</h4>
         <p class="muted">
-          When the user clicks <strong>"Rules &amp; URL Tester…"</strong> in the menu bar or runs <code>browsify --window</code>, <code>browsify-ui-server</code> binds to <code>127.0.0.1:0</code> (random ephemeral loopback port with a one-time session token) and opens it in the user's browser.
+          The UI connects to <code>GET /api/events</code> (Server-Sent Events) to receive real-time log entries for <code>LogViewer.svelte</code> and config reload notifications. When all SSE clients disconnect (browser tab closed), a 30-second grace timer stops the listener and frees all UI buffers back to 0 MB.
         </p>
       </div>
       <div class="subbox">
-        <h4>3. WebSocket/SSE Bridge &amp; Auto-Stop</h4>
+        <h4>3. Browsify Rebrand &amp; MIT Attribution</h4>
         <p class="muted">
-          A lightweight 20-line shim replaces <code>window.webkit.messageHandlers.finicky</code> with <code>fetch/EventSource</code> calls to the loopback server (supporting <code>testUrl</code>, <code>getRules</code>, <code>saveRules</code>, <code>getInstalledBrowsers</code>, <code>getBrowserProfiles</code>). Once the tab closes, the server shuts down and frees all buffers.
+          <code>apps/browsify-ui</code> and <code>apps/browser-addon</code> are branded as <strong>Browsify</strong> (showing Native vs. Hybrid QuickJS status in the UI and using <code>browsify://open/</code> in the extension while accepting <code>finicky://open/</code>). <code>LICENSE</code>, <code>About.svelte</code>, and <code>README.md</code> preserve full MIT copyright notice and credit John Sterling (<code>@johnste</code>) and <code>@uetchy</code>.
         </p>
       </div>
     </div>
-  </section>
-
-  <!-- SECTION 7: TEST SUITE & ISSUE MATRIX -->
-  <section id="sec-tests" class="card">
-    <div class="sec-header">
-      <h2>7. Finicky Test Suite Parity &amp; GitHub Issue Coverage Matrix</h2>
-      <span class="sec-tag">Every Existing Finicky Test + Real-World Bug Covered</span>
-    </div>
-
-    <table>
-      <thead>
-        <tr>
-          <th>Source in Finicky Repo / Issue Tracker</th>
-          <th>Test Cases / Scenarios</th>
-          <th>Browsify Target Module &amp; Verification</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td><code>packages/config-api/src/wildcard.test.ts</code></td>
-          <td>Protocol-agnostic wildcards (<code>example.com*</code> matches <code>http</code>, <code>https</code>, <code>mailto</code>, <code>ftp</code>), leading/middle/multiple <code>*</code>, escaped <code>\*</code>, query/fragment patterns (<code>*?param=value*</code>, <code>*.com/*#*</code>), invalid regex chars (<code>[invalid.pattern</code>), exact protocol match (<code>https://example.com</code>).</td>
-          <td><code>browsify_core::matcher::tests</code> (100% port of all 14 wildcard test suites)</td>
-        </tr>
-        <tr>
-          <td><code>packages/config-api/src/FinickyURL.test.ts</code></td>
-          <td><code>FinickyURL</code> construction, <code>url.searchParams</code> mutation, <code>url.pathname</code> mutation, legacy v3 <code>url.urlString</code>, <code>url.url</code> (<code>LegacyURLObject</code> with port/auth/hash/search), <code>url.opener</code>, and <code>url.keys</code> helpful error message.</td>
-          <td><code>browsify_js::tests::finicky_url_tests</code></td>
-        </tr>
-        <tr>
-          <td><code>packages/config-api/src/config.test.ts</code> &amp; <code>utils.test.ts</code></td>
-          <td>String, wildcard, RegExp, function, and mixed-array matchers; chained rewrites returning string, <code>URL</code>, <code>FinickyURL</code>, or legacy object; <code>autodetectAppStringType</code> (<code>appName</code>, <code>bundleId</code>, <code>path</code>, <code>none</code>); null opener handling.</td>
-          <td><code>browsify_js::tests::config_compat_tests</code> &amp; <code>browsify_core::router::tests</code></td>
-        </tr>
-        <tr>
-          <td><code>apps/finicky/src/resolver/resolver_test.go</code> &amp; <code>rules_test.go</code></td>
-          <td>No-config Safari fallback, JS-only config, JSON-rules-only config, JS + JSON rules priority merge, profile propagation, <code>openInBackground</code> merge logic, <code>rules.json</code> round-trip serialization (single string vs array <code>match</code>).</td>
-          <td><code>browsify_core::rules_file::tests</code> &amp; integration tests</td>
-        </tr>
-        <tr>
-          <td><strong>Issues #501 &amp; #550</strong> (Profile focus &amp; Spaces)</td>
-          <td>Links routed to a Chromium profile opening in background or focusing wrong Space.</td>
-          <td><code>browsify_macos::workspace</code> launch plan + post-launch window activation</td>
-        </tr>
-        <tr>
-          <td><strong>Issue #513</strong> (Firefox profile routing)</td>
-          <td>Firefox <code>-P</code> profile lookup + Firefox 136+ Profile Groups SQLite (<code>--profile</code>) + Zen browser support.</td>
-          <td><code>browsify_core::profiles::firefox</code> unit tests with fixture <code>profiles.ini</code> &amp; SQLite DB</td>
-        </tr>
-        <tr>
-          <td><strong>Issues #431 &amp; #440</strong> (Chrome PWAs / <code>args</code>)</td>
-          <td>Opening links inside a Chrome/Brave PWA (<code>--app-id=...</code>) even when the browser is already running.</td>
-          <td><code>browsify_core::config::BrowserSpec</code> + <code>createsNewApplicationInstance</code> launch strategy</td>
-        </tr>
-        <tr>
-          <td><strong>Issue #441</strong> (v3 → v4 migration friction)</td>
-          <td>Config discovery across dotfiles &amp; XDG dirs, automatic v3/v4 compatibility, and <code>browsify migrate</code> CLI.</td>
-          <td><code>browsify_js::migrate</code> + CLI integration tests</td>
-        </tr>
-        <tr>
-          <td><strong>Issue #515</strong> (Duplicate menu bar icons)</td>
-          <td>Multiple instances spawned by LaunchServices accumulating status bar icons.</td>
-          <td><code>browsify_macos::singleton</code> <code>flock</code> coordination + duplicate process cleanup</td>
-        </tr>
-      </tbody>
-    </table>
   </section>
 
   <!-- SECTION 8: IMPLEMENTATION ROADMAP -->
@@ -818,38 +786,37 @@ $ browsify migrate --export-toml ~/.config/browsify/config.toml
 
     <div class="grid-2">
       <div class="subbox">
-        <h4>Phase 1: <code>browsify-core</code> (Pure Rust Router &amp; Profile Engine)</h4>
+        <h4>Phase 1: Core &amp; Hybrid Engine Refinement (<code>browsify-core</code>, <code>browsify-js</code>)</h4>
         <ul>
-          <li>Scaffold Cargo workspace at repo root alongside existing folders.</li>
-          <li>Implement Finicky-compatible wildcard matcher, regex matcher, hostname matcher, and native URL rewriter.</li>
-          <li>Implement <code>ProfileResolver</code> for Chromium (<code>Local State</code> typed serde + <code>(mtime, size)</code> cache) and Firefox (<code>profiles.ini</code> + Profile Groups SQLite + Containers).</li>
-          <li>Implement <code>rules.json</code> &amp; <code>config.toml</code> loader and short-URL resolver.</li>
-          <li>Port all wildcard, rule, and profile unit tests (`cargo test -p browsify-core`).</li>
+          <li>Remove sunsetted Arc Space fields (<code>space</code>, <code>arc_space</code>, <code>list_arc_spaces</code>) from <code>browsify-core</code> and <code>browsify-js</code>.</li>
+          <li>Add <code>profile: "container:&lt;Name&gt;"</code> parsing in <code>ProfileResolver</code> so <code>rules.json</code> and UI rules can target Firefox Containers.</li>
+          <li>Add 256-entry LRU cache + macOS <code>NSURLSession</code> redirect resolver in <code>shorturl.rs</code>.</li>
+          <li>Replace <code>fn.toString()</code> regex sniffing in <code>browsify-js</code> with safe helper markers (<code>matchHostnames</code>, <code>matchDomains</code>, <code>stripParams</code>, <code>matchOpener</code>, <code>forceHttps</code>, <code>replaceHost</code>).</li>
+          <li>Implement ordered interleaved <code>Vec&lt;HybridRewrite&gt;</code> &amp; <code>Vec&lt;HybridHandler&gt;</code> pipeline preserving <code>options.originalUrl</code>, Rust-backed WHATWG <code>URL</code> parsing, lazy host callbacks, and <code>uses_window_title</code> detection.</li>
+          <li>Default <code>check_for_updates</code> to <code>false</code> and support inheriting unset <code>defaultBrowser</code>/<code>options</code> from <code>rules.json</code>.</li>
         </ul>
       </div>
       <div class="subbox">
-        <h4>Phase 2: <code>browsify-js</code> (QuickJS Runtime, Transpiler &amp; Migration)</h4>
+        <h4>Phase 2: macOS AppKit Daemon &amp; Native Launcher (<code>apps/browsify</code>)</h4>
         <ul>
-          <li>Embed <code>rquickjs</code> with the <code>FinickyURL</code>, <code>LegacyURLObject</code>, and <code>finicky.*</code> prelude.</li>
-          <li>Add TypeScript type-stripping and ESM <code>export default</code> transformation so <code>~/.finicky.js</code> and <code>~/.finicky.ts</code> load directly without Babel or esbuild.</li>
-          <li>Build the hybrid rule extractor that compiles static JS rules into <code>browsify-core</code> and drops the <code>rquickjs::Runtime</code> when no JS functions remain.</li>
-          <li>Implement <code>browsify migrate</code> to inspect and convert Finicky configs.</li>
+          <li>Implement <code>objc2</code> <code>NSApplication</code> daemon in <code>macos.rs</code>: <code>kAEGetURL</code>, <code>application:openFile:</code>, Handoff, <code>ASWebAuthenticationSession</code>, <code>NSStatusBar</code> menu (with 10-item <code>Recent URLs</code>, <code>Set as Default Browser</code>, <code>Edit Config…</code>, <code>Reload Config</code>, error badge), lazy <code>AXUIElement</code> <code>windowTitle</code>, and IOKit power info.</li>
+          <li>Implement direct <code>NSWorkspace</code> launching and post-handoff <code>NSRunningApplication</code> activation in <code>launcher.rs</code>.</li>
+          <li>Add automatic file watching hot-reload for Primary Config and <code>rules.json</code>, plus GitHub Releases update checker (when opted in).</li>
         </ul>
       </div>
       <div class="subbox">
-        <h4>Phase 3: <code>browsify-macos</code> (AppKit Daemon, AppleEvents &amp; Launcher)</h4>
+        <h4>Phase 3: Secure On-Demand UI Server &amp; Browsify UI / Addon</h4>
         <ul>
-          <li>Implement <code>objc2</code> <code>NSApplication</code> delegate (<code>kAEGetURL</code>, <code>openFile:</code>, Handoff, <code>ASWebAuthenticationSession</code>).</li>
-          <li>Implement <code>flock</code> singleton lock, AppNap prevention, lazy <code>AXUIElement</code> <code>windowTitle</code>, <code>CGEventSourceFlagsState</code> modifiers, and IOKit power info.</li>
-          <li>Implement direct <code>NSWorkspace</code> launching with post-launch profile window focus handoff and menu bar status item.</li>
+          <li>Upgrade <code>ui_server.rs</code> with per-launch session token + <code>Origin</code> validation, SSE log streaming (<code>/api/events</code>), 30s idle auto-shutdown after tab disconnect, bundle-relative asset loading, and installed-browser filtering.</li>
+          <li>Update <code>apps/browsify-ui</code> and <code>apps/browser-addon</code> with Browsify branding, SSE log consumer, Primary Config override indicators, and upstream MIT credits to John Sterling &amp; <code>@uetchy</code>.</li>
         </ul>
       </div>
       <div class="subbox">
-        <h4>Phase 4: <code>browsify-ui-server</code> &amp; <code>browsify-cli</code></h4>
+        <h4>Phase 4: Legacy Cleanup, Packaging &amp; Verification</h4>
         <ul>
-          <li>Implement the on-demand <code>127.0.0.1:0</code> HTTP bridge serving <code>packages/finicky-ui</code> with automatic idle shutdown.</li>
-          <li>Wire CLI commands: <code>browsify --test &lt;url&gt;</code>, <code>browsify --validate</code>, <code>browsify --list-browsers</code>, <code>browsify --list-profiles</code>, <code>browsify migrate</code>, and <code>browsify --ui</code>.</li>
-          <li>Add build scripts for <code>Browsify.app</code> bundle packaging and end-to-end benchmark suite.</li>
+          <li>Move bundle assets (<code>Info.plist</code> with <code>com.lavenxsnow.browsify</code>, icons, <code>browsify.d.ts</code>, <code>finicky.d.ts</code>) to <code>apps/browsify/assets/</code> and remove legacy <code>apps/finicky/</code> and <code>packages/config-api/</code>.</li>
+          <li>Update <code>LICENSE</code>, <code>scripts/build.sh</code>, <code>scripts/test.sh</code>, and <code>.github/workflows/</code> for the Rust workspace and <code>Browsify.app</code> bundle.</li>
+          <li>Run full Rust unit/integration test suite and UI typecheck/build verification.</li>
         </ul>
       </div>
     </div>

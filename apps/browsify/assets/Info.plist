@@ -5,23 +5,23 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleDisplayName</key>
-    <string>Finicky</string>
+    <string>Browsify</string>
     <key>CFBundleExecutable</key>
-    <string>Finicky</string>
+    <string>browsify</string>
     <key>CFBundleIdentifier</key>
-    <string>se.johnste.finicky</string>
+    <string>com.lavenxsnow.browsify</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>Finicky</string>
+    <string>Browsify</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>4.4.0-alpha</string>
+    <string>0.1.0</string>
     <key>CFBundleVersion</key>
-    <string>4.4.0-alpha</string>
+    <string>0.1.0</string>
     <key>CFBundleIconFile</key>
-    <string>finicky.icns</string>
+    <string>browsify.icns</string>
     <key>LSUIElement</key>
     <true/>
     <key>CFBundleURLTypes</key>
@@ -35,6 +35,7 @@
         <array>
           <string>http</string>
           <string>https</string>
+          <string>browsify</string>
           <string>finicky</string>
         </array>
       </dict>
@@ -45,7 +46,7 @@
     <array>
       <dict>
         <key>CFBundleTypeIconFile</key>
-        <string>finicky</string>
+        <string>browsify</string>
         <key>CFBundleTypeName</key>
         <string>HTML Document</string>
         <key>CFBundleTypeRole</key>
@@ -59,7 +60,7 @@
       </dict>
       <dict>
         <key>CFBundleTypeIconFile</key>
-        <string>finicky</string>
+        <string>browsify</string>
         <key>CFBundleTypeName</key>
         <string>XHTML document</string>
         <key>CFBundleTypeRole</key>

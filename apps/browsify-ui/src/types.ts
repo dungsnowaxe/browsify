@@ -29,6 +29,7 @@ export interface LogEntry {
 
 declare global {
   interface Window {
+    __BROWSIFY_TOKEN__?: string;
     finicky: {
       sendMessage: (msg: any) => void;
       receiveMessage: (msg: any) => void;
@@ -56,6 +57,11 @@ export interface UpdateInfo {
 export interface ConfigInfo {
   configPath: string;
   isJSConfig?: boolean;
+  hasPrimaryConfig?: boolean;
+  explicitDefaultBrowser?: boolean;
+  pureNativeFastPath?: boolean;
+  format?: string;
+  isDefaultBrowser?: boolean;
   handlers?: number;
   rewrites?: number;
   defaultBrowser?: string;

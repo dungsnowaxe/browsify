@@ -1,16 +1,7 @@
+#!/bin/bash
+set -e
+
 (
-    cd packages/config-api
+    cd apps/browsify-ui
     npm ci
 )
-
-(
-    cd packages/finicky-ui
-    npm ci
-)
-
-
-(
-    cd apps/finicky/src
-    go mod tidy
-)
-

@@ -44,6 +44,8 @@ OPTIONS:
 }
 
 fn main() {
+    macos::init_host_hooks();
+
     let args: Vec<String> = env::args().skip(1).collect();
     if args.iter().any(|a| a == "-h" || a == "--help" || a == "help") {
         print_usage();
@@ -71,6 +73,10 @@ fn main() {
     let mut i = 0;
     while i < args.len() {
         let arg = &args[i];
+        if arg.starts_with("-psn_") {
+            i += 1;
+            continue;
+        }
         match arg.as_str() {
             "--config" | "-config" => {
                 i += 1;
@@ -117,12 +123,24 @@ fn main() {
         i += 1;
     }
 
-    let cmd = positional
-        .first()
-        .map(|s| s.as_str())
-        .unwrap_or(if force_window { "ui" } else { "validate" });
+    let cmd = positional.first().map(|s| s.as_str()).unwrap_or("daemon");
 
     match cmd {
+        "daemon" => {
+            let engine = load_engine_or_exit(
+                &home_dir,
+                custom_config.as_deref(),
+                custom_rules.as_deref(),
+                skip_config,
+            );
+            let resolver = Arc::new(ProfileResolver::new(&home_dir));
+            macos::run_daemon(
+                Arc::new(Mutex::new(engine)),
+                resolver,
+                force_window,
+                dry_run,
+            );
+        }
         "list-browsers" => {
             println!("{:<36} {:<28} {:<10}", "BUNDLE ID", "APP NAME", "FAMILY");
             println!("{}", "-".repeat(76));
@@ -269,7 +287,13 @@ fn main() {
             }
         }
         "ui" => {
-            let _lock = macos::acquire_singleton_lock();
+            let _lock = match macos::acquire_singleton_lock() {
+                Ok(file) => file,
+                Err(e) => {
+                    eprintln!("Browsify is already running ({}). Exiting.", e);
+                    std::process::exit(1);
+                }
+            };
             let engine = load_engine_or_exit(
                 &home_dir,
                 custom_config.as_deref(),

@@ -42,7 +42,8 @@ pub fn format_open_command(plan: &ResolvedLaunchPlan) -> String {
     parts.join(" ")
 }
 
-/// Executes a [`ResolvedLaunchPlan`].
+/// Executes a [`ResolvedLaunchPlan`] using native `NSWorkspace` / LaunchServices on macOS
+/// and post-handoff `NSRunningApplication` activation (fixing Finicky Issues #501 & #550).
 pub fn execute_launch_plan(plan: &ResolvedLaunchPlan, dry_run: bool) -> Result<(), String> {
     if let Some(warn) = &plan.warning {
         eprintln!("browsify warning: {}", warn);
@@ -55,6 +56,13 @@ pub fn execute_launch_plan(plan: &ResolvedLaunchPlan, dry_run: bool) -> Result<(
     if dry_run {
         println!("{}", format_open_command(plan));
         return Ok(());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        if !plan.creates_new_instance && crate::macos::launch_url_via_nsworkspace(plan) {
+            return Ok(());
+        }
     }
 
     let mut open_args = Vec::new();
@@ -86,9 +94,6 @@ pub fn execute_launch_plan(plan: &ResolvedLaunchPlan, dry_run: bool) -> Result<(
         open_args.push(plan.final_url.clone());
     }
 
-    // Spawn non-blocking on macOS (`open`), and if `activate_after_handoff` is set
-    // (fixes Finicky #501 & #550 where `-n` helper exits and drops foreground focus),
-    // activate the target browser after the helper completes handoff.
     let mut child = Command::new("open")
         .args(&open_args)
         .spawn()
@@ -96,19 +101,7 @@ pub fn execute_launch_plan(plan: &ResolvedLaunchPlan, dry_run: bool) -> Result<(
 
     if plan.activate_after_handoff {
         let _ = child.wait();
-        #[cfg(target_os = "macos")]
-        {
-            // Explicitly bring the running browser process to the foreground across Spaces
-            let script = if plan.app_type == AppType::BundleId {
-                format!(
-                    "tell application id {:?} to activate",
-                    plan.browser_name
-                )
-            } else {
-                format!("tell application {:?} to activate", plan.browser_name)
-            };
-            let _ = Command::new("osascript").args(["-e", &script]).spawn();
-        }
+        crate::macos::activate_running_browser(plan.app_type, &plan.browser_name);
     }
 
     Ok(())

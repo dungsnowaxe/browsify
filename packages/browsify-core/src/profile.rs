@@ -1,4 +1,6 @@
-use crate::browser::{lookup_browser_meta, AppType, BrowserConfig, BrowserFamily};
+use crate::browser::{
+    lookup_browser_meta, AppType, BrowserConfig, BrowserFamily, BrowserMeta, BROWSERS_REGISTRY,
+};
 use crate::sqlite_profiles::read_firefox_group_profiles;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -34,7 +36,6 @@ pub struct ResolvedLaunchPlan {
     pub activate_after_handoff: bool,
     pub args: Vec<String>,
     pub final_url: String,
-    pub arc_space: Option<String>,
     pub warning: Option<String>,
 }
 
@@ -109,7 +110,7 @@ impl ProfileResolver {
             return Vec::new();
         };
         match meta.family {
-            BrowserFamily::Chromium | BrowserFamily::Arc => {
+            BrowserFamily::Chromium => {
                 let path = self.local_state_path(meta.config_dir_relative);
                 let Some(entries) = self.load_chromium_profiles(&path) else {
                     return Vec::new();
@@ -142,22 +143,36 @@ impl ProfileResolver {
         }
     }
 
-    /// Lists discovered Arc Spaces from `~/Library/Application Support/Arc/StorableSidebar.json`.
-    pub fn list_arc_spaces(&self) -> Vec<String> {
-        let path = self
-            .home_dir
-            .join("Library/Application Support/Arc/StorableSidebar.json");
-        let Ok(content) = fs::read_to_string(&path) else {
-            return Vec::new();
-        };
-        let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) else {
-            return Vec::new();
-        };
-        let mut spaces = Vec::new();
-        collect_arc_space_titles(&json, &mut spaces);
-        spaces.sort();
-        spaces.dedup();
-        spaces
+    /// Lists browsers from `BROWSERS_REGISTRY` that are installed on the system
+    /// (checking `/Applications`, `~/Applications`, or existing browser profile directories).
+    pub fn list_installed_browsers(&self) -> Vec<&'static BrowserMeta> {
+        let mut installed = Vec::new();
+        for b in BROWSERS_REGISTRY {
+            let sys_app = Path::new("/Applications").join(format!("{}.app", b.app_name));
+            let sys_core_app =
+                Path::new("/System/Volumes/Preboot/Cryptexes/App/System/Applications")
+                    .join(format!("{}.app", b.app_name));
+            let user_app = self
+                .home_dir
+                .join("Applications")
+                .join(format!("{}.app", b.app_name));
+            let has_profile_dir = !b.config_dir_relative.is_empty()
+                && self
+                    .home_dir
+                    .join("Library/Application Support")
+                    .join(b.config_dir_relative)
+                    .exists();
+
+            if sys_app.exists() || sys_core_app.exists() || user_app.exists() || has_profile_dir {
+                installed.push(b);
+            }
+        }
+        if installed.is_empty() {
+            // Fallback on non-macOS or clean test environments
+            BROWSERS_REGISTRY.iter().collect()
+        } else {
+            installed
+        }
     }
 
     /// Resolves a Chromium PWA `app_id` (either a 32-char Chromium extension ID or a PWA `.app` display name
@@ -213,7 +228,6 @@ impl ProfileResolver {
                 activate_after_handoff: false,
                 args: Vec::new(),
                 final_url: config.url.clone(),
-                arc_space: None,
                 warning: None,
             };
         }
@@ -223,8 +237,22 @@ impl ProfileResolver {
         let mut warning = None;
         let meta = lookup_browser_meta(&config.name);
 
+        let (effective_profile, effective_container) =
+            if let Some(c) = config.profile.strip_prefix("container:") {
+                (
+                    "",
+                    if !c.is_empty() {
+                        Some(c)
+                    } else {
+                        config.container.as_deref()
+                    },
+                )
+            } else {
+                (config.profile.as_str(), config.container.as_deref())
+            };
+
         // 1. Handle Firefox Multi-Account Container URL rewrite if requested
-        if let Some(container_name) = &config.container {
+        if let Some(container_name) = effective_container {
             if !container_name.is_empty() {
                 final_url = format!(
                     "ext+container:name={}&url={}",
@@ -235,8 +263,8 @@ impl ProfileResolver {
         }
 
         // 2. Resolve profile arguments
-        if !config.profile.is_empty() {
-            match self.resolve_profile_args(&config.name, &config.profile) {
+        if !effective_profile.is_empty() {
+            match self.resolve_profile_args(&config.name, effective_profile) {
                 Ok(profile_args) => {
                     args.extend(profile_args);
                 }
@@ -251,7 +279,6 @@ impl ProfileResolver {
                             activate_after_handoff: false,
                             args: Vec::new(),
                             final_url,
-                            arc_space: config.space.clone(),
                             warning,
                         };
                     }
@@ -260,11 +287,11 @@ impl ProfileResolver {
         }
 
         // 3. Handle Chromium PWA `--app-id` or `--app`
-        let is_chromium_or_arc = meta
-            .map(|m| matches!(m.family, BrowserFamily::Chromium | BrowserFamily::Arc))
+        let is_chromium = meta
+            .map(|m| matches!(m.family, BrowserFamily::Chromium))
             .unwrap_or(true);
 
-        if is_chromium_or_arc {
+        if is_chromium {
             if let Some(app_id) = &config.app_id {
                 if !app_id.is_empty() {
                     let resolved_id = self.resolve_pwa_app_id(app_id);
@@ -298,7 +325,6 @@ impl ProfileResolver {
             activate_after_handoff,
             args,
             final_url,
-            arc_space: config.space.clone(),
             warning,
         }
     }
@@ -308,6 +334,12 @@ impl ProfileResolver {
         identifier: &str,
         profile: &str,
     ) -> Result<Vec<String>, String> {
+        if let Some(c) = profile.strip_prefix("container:") {
+            if !c.is_empty() {
+                return Ok(Vec::new());
+            }
+        }
+
         let Some(meta) = lookup_browser_meta(identifier) else {
             return Err(format!(
                 "Browser '{}' does not support profile resolution",
@@ -316,7 +348,7 @@ impl ProfileResolver {
         };
 
         match meta.family {
-            BrowserFamily::Chromium | BrowserFamily::Arc => {
+            BrowserFamily::Chromium => {
                 let path = self.local_state_path(meta.config_dir_relative);
                 let Some(entries) = self.load_chromium_profiles(&path) else {
                     // If Local State doesn't exist yet, still allow canonical directory names ("Default", "Profile 1")
@@ -549,29 +581,6 @@ impl ProfileResolver {
     }
 }
 
-fn collect_arc_space_titles(val: &serde_json::Value, out: &mut Vec<String>) {
-    match val {
-        serde_json::Value::Object(map) => {
-            if map.contains_key("containerIDs") {
-                if let Some(title) = map.get("title").and_then(|t| t.as_str()) {
-                    if !title.is_empty() {
-                        out.push(title.to_string());
-                    }
-                }
-            }
-            for v in map.values() {
-                collect_arc_space_titles(v, out);
-            }
-        }
-        serde_json::Value::Array(arr) => {
-            for v in arr {
-                collect_arc_space_titles(v, out);
-            }
-        }
-        _ => {}
-    }
-}
-
 fn extract_plist_string_key(xml: &str, key: &str) -> Option<String> {
     let needle = format!("<key>{}</key>", key);
     let idx = xml.find(&needle)?;
@@ -685,6 +694,17 @@ mod tests {
         );
         assert!(plan.creates_new_instance);
         assert!(plan.activate_after_handoff);
+
+        // Also test `profile: "container:Personal"` prefix syntax (used in rules.json / UI)
+        let mut cfg_prefix = BrowserConfig::from_spec_str("Firefox", "https://mozilla.org");
+        cfg_prefix.profile = "container:Personal".to_string();
+        let plan_prefix =
+            resolver.build_launch_plan(&cfg_prefix, false, MissingProfilePolicy::WarnAndFallback);
+        assert!(plan_prefix.args.is_empty());
+        assert_eq!(
+            plan_prefix.final_url,
+            "ext+container:name=Personal&url=https%3A%2F%2Fmozilla.org"
+        );
 
         let _ = fs::remove_dir_all(&home);
     }

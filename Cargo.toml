@@ -19,7 +19,7 @@ toml = "0.8"
 url = "2.5"
 regex = "1.11"
 thiserror = "2.0"
-rquickjs = "0.8"
+rquickjs = { version = "0.8", features = ["parallel"] }
 base64 = "0.22"
 
 [profile.release]

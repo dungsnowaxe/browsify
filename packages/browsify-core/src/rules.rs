@@ -204,7 +204,6 @@ pub struct TomlBrowserSpec {
     pub container: Option<String>,
     pub app_id: Option<String>,
     pub app_mode: Option<bool>,
-    pub space: Option<String>,
     #[serde(default)]
     pub args: Vec<String>,
 }
@@ -237,15 +236,21 @@ impl TomlBrowserSpec {
         } else {
             Some(&self.name)
         });
+        let (profile, container) = if self.container.is_some() {
+            (self.profile.clone(), self.container.clone())
+        } else if let Some(c) = self.profile.strip_prefix("container:") {
+            (String::new(), (!c.is_empty()).then(|| c.to_string()))
+        } else {
+            (self.profile.clone(), None)
+        };
         BrowserConfig {
             name: self.name.clone(),
             app_type,
             open_in_background: self.open_in_background,
-            profile: self.profile.clone(),
-            container: self.container.clone(),
+            profile,
+            container,
             app_id: self.app_id.clone(),
             app_mode: self.app_mode,
-            space: self.space.clone(),
             args: self.args.clone(),
             url: url.to_string(),
         }
@@ -287,6 +292,7 @@ pub struct TomlHandlerRule {
     pub match_regex: Option<String>,
     pub match_hostnames: Option<StringOrVec>,
     pub opener_bundle_id: Option<StringOrVec>,
+    pub opener_window_title: Option<StringOrVec>,
     pub browser: TomlBrowserTarget,
 }
 

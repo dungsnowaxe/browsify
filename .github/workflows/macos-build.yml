@@ -1,12 +1,11 @@
-# This workflow builds the Finicky macOS app for both Silicon (ARM64) and Intel (x86_64) architectures
 name: macOS Build
 
 on:
-    push:
-      branches: [main]
-    pull_request:
-      branches: [main]
-    workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
 
 jobs:
   build-macos:
@@ -22,116 +21,36 @@ jobs:
           node-version: '22'
           cache: 'npm'
           cache-dependency-path: |
-            packages/config-api/package-lock.json
-            packages/finicky-ui/package-lock.json
+            apps/browsify-ui/package-lock.json
 
-      - name: Set up Go
-        uses: actions/setup-go@v4
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
         with:
-          go-version: '1.24'
-          cache-dependency-path: |
-            apps/finicky/src/go.sum
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
 
-      - name: Install dependencies
+      - name: Install UI dependencies
         run: |
           chmod +x scripts/install.sh
           ./scripts/install.sh
 
+      - name: Run Rust workspace tests
+        run: cargo test --workspace
+
       - name: Build universal binary
         env:
-          API_HOST: ${{ vars.API_HOST || '' }}
           BUILD_UNIVERSAL: '1'
         run: |
-          echo "API_HOST=${{ vars.API_HOST || '' }}" > .env
           chmod +x scripts/build.sh
           ./scripts/build.sh
 
       - name: Create archive
         run: |
-          cd apps/finicky/build
-          tar -czf Finicky-universal.tar.gz Finicky.app
+          cd apps/browsify/build
+          tar -czf Browsify-universal.tar.gz Browsify.app
 
       - name: Upload universal binary
         uses: actions/upload-artifact@v4
         with:
-          name: Finicky-universal
-          path: apps/finicky/build/Finicky-universal.tar.gz
+          name: Browsify-universal
+          path: apps/browsify/build/Browsify-universal.tar.gz
           retention-days: 14
-
-  sign-and-notarize:
-    runs-on: macos-latest
-    needs: build-macos
-    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Download universal binary
-        uses: actions/download-artifact@v4
-        with:
-          name: Finicky-universal
-          path: ./universal
-
-      - name: Extract universal binary
-        run: |
-          cd universal
-          tar -xzf Finicky-universal.tar.gz
-
-      - name: Import signing certificate
-        env:
-          SIGNING_CERTIFICATE_P12_DATA: ${{ secrets.SIGNING_CERTIFICATE_P12_DATA }}
-          SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.SIGNING_CERTIFICATE_PASSWORD }}
-        run: |
-          # Create temporary keychain
-          security create-keychain -p temp_password temp.keychain
-          security default-keychain -s temp.keychain
-          security unlock-keychain -p temp_password temp.keychain
-
-          # Import certificate
-          echo "$SIGNING_CERTIFICATE_P12_DATA" | base64 --decode > certificate.p12
-          security import certificate.p12 -k temp.keychain -P "$SIGNING_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
-
-          # Set partition list
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k temp_password temp.keychain
-
-          # Clean up
-          rm certificate.p12
-
-      - name: Pre-sign bundle
-        run: |
-          codesign --deep --force --options runtime \
-            --sign "Developer ID Application: John Sterling" \
-            ./universal/Finicky.app
-
-      - name: Install gon
-        run: |
-          brew install Bearer/tap/gon
-
-      - name: Update gon config for CI
-        run: |
-          # Create the directory structure expected by the existing gon config
-          mkdir -p apps/finicky/build
-          # Copy the universal binary to the expected location for the existing gon config
-          cp -r universal/Finicky.app apps/finicky/build/Finicky.app
-
-      - name: Sign and notarize
-        env:
-          AC_USERNAME: ${{ secrets.APPLE_ID_USERNAME }}
-          AC_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
-          AC_PROVIDER: ${{ secrets.AC_PROVIDER }}
-        run: |
-          mkdir -p dist
-          gon scripts/gon-config.json
-
-      - name: Upload signed DMG
-        uses: actions/upload-artifact@v4
-        with:
-          name: Finicky-signed-dmg
-          path: dist/Finicky.dmg
-          retention-days: 30
-
-      - name: Cleanup keychain
-        if: always()
-        run: |
-          security delete-keychain temp.keychain || true

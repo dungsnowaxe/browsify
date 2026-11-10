@@ -117,21 +117,16 @@ class URLSearchParamsPolyfill {
 }
 
 function parseRawUrl(input, base) {
-  let str = String(input).trim();
-  if (base !== undefined) {
-    const b = base instanceof URLPolyfill ? base : new URLPolyfill(String(base));
-    if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(str)) {
-      // already absolute
-    } else if (str.startsWith("/")) {
-      str = b.origin + str;
-    } else {
-      const basePath = b.pathname.endsWith("/")
-        ? b.pathname
-        : b.pathname.slice(0, b.pathname.lastIndexOf("/") + 1);
-      str = b.origin + basePath + str;
+  if (typeof globalThis.__browsifyParseUrl === "function") {
+    const baseStr = base !== undefined ? String(base) : "";
+    const json = globalThis.__browsifyParseUrl(String(input), baseStr);
+    if (!json) {
+      throw new TypeError(`Invalid URL: ${input}`);
     }
+    return JSON.parse(json);
   }
-  const m = /^([a-zA-Z][a-zA-Z0-9+.-]*):(?:\/\/(?:([^:@/?#]+)(?::([^@/?#]*))?@)?([^:/?#]+)(?::(\d+))?)?([^?#]*)(?:\?([^#]*))?(?:#(.*))?$/.exec(str);
+  let str = String(input).trim();
+  const m = /^([a-zA-Z][a-zA-Z0-9+.-]*):(?:\/\/(?:([^:@/?#]+)(?::([^@/?#]*))?@)?(\[[^\]]+\]|[^:/?#]+)(?::(\d+))?)?([^?#]*)(?:\?([^#]*))?(?:#(.*))?$/.exec(str);
   if (!m) {
     throw new TypeError(`Invalid URL: ${input}`);
   }
@@ -192,6 +187,11 @@ class URLPolyfill {
   }
   set hostname(val) {
     const s = String(val);
+    if (s.startsWith("[")) {
+      const closeIdx = s.indexOf("]");
+      this._hostname = closeIdx !== -1 ? s.slice(0, closeIdx + 1) : s;
+      return;
+    }
     const idx = s.indexOf(":");
     if (idx !== -1) {
       this._hostname = s.slice(0, idx);
@@ -212,6 +212,15 @@ class URLPolyfill {
   }
   set host(val) {
     const s = String(val);
+    if (s.startsWith("[")) {
+      const closeIdx = s.indexOf("]");
+      if (closeIdx !== -1) {
+        this._hostname = s.slice(0, closeIdx + 1);
+        const rest = s.slice(closeIdx + 1);
+        this._port = rest.startsWith(":") ? rest.slice(1) : "";
+        return;
+      }
+    }
     const idx = s.indexOf(":");
     if (idx !== -1) {
       this._hostname = s.slice(0, idx);
@@ -358,10 +367,9 @@ function matchHostnames(matchers) {
       return false;
     });
   };
-  // Attach compile-time metadata so HybridEngine can lower `finicky.matchHostnames(...)` to native Rust!
   fn.__browsifyHostnames = list.map((m) =>
     m instanceof RegExp
-      ? { kind: "regex", pattern: m.source }
+      ? { kind: "regex", pattern: m.source, flags: m.flags || "" }
       : { kind: "exact", pattern: m }
   );
   return fn;
@@ -372,11 +380,21 @@ function matchDomains(matchers) {
   return matchHostnames(matchers);
 }
 
+function matchOpener(bundleIds) {
+  const list = (Array.isArray(bundleIds) ? bundleIds : [bundleIds]).map(String);
+  const fn = function (_url, options) {
+    const bid = options?.opener?.bundleId;
+    return Boolean(bid && list.includes(bid));
+  };
+  fn.__browsifyOpenerBundleIds = list;
+  return fn;
+}
+
 function stripParams(patterns) {
-  const list = Array.isArray(patterns) ? patterns : [patterns];
+  const list = (Array.isArray(patterns) ? patterns : [patterns]).map(String);
   return {
-    __browsifyStripParams: list.map(String),
-    match: () => true,
+    __browsifyStripParams: list,
+    match: "*",
     url: (url) => {
       for (const pat of list) {
         if (pat.endsWith("*")) {
@@ -394,42 +412,72 @@ function stripParams(patterns) {
   };
 }
 
-globalThis.__browsifyModifierKeys = {
-  shift: false,
-  option: false,
-  command: false,
-  control: false,
-  capsLock: false,
-  fn: false,
-  function: false,
-};
+function forceHttps(match = "*") {
+  return {
+    __browsifyForceHttps: true,
+    match,
+    url: (url) => {
+      if (url.protocol === "http:") url.protocol = "https:";
+      return url;
+    },
+  };
+}
 
-globalThis.__browsifySystemInfo = {
-  localizedName: "Mac",
-  name: "mac",
-};
-
-globalThis.__browsifyPowerInfo = {
-  isCharging: false,
-  isConnected: true,
-  percentage: 100,
-};
-
-globalThis.__browsifyRunningApps = [];
+function replaceHost(fromOrMatch, toHost) {
+  return {
+    __browsifyReplaceHost: String(toHost),
+    match: fromOrMatch,
+    url: (url) => {
+      url.host = String(toHost);
+      return url;
+    },
+  };
+}
 
 globalThis.finicky = {
   matchHostnames,
   matchDomains,
+  matchOpener,
   stripParams,
-  getModifierKeys: () => globalThis.__browsifyModifierKeys,
-  getSystemInfo: () => globalThis.__browsifySystemInfo,
-  getPowerInfo: () => globalThis.__browsifyPowerInfo,
+  forceHttps,
+  replaceHost,
+  getModifierKeys: () => {
+    if (typeof globalThis.__browsifyHostGetModifierKeys === "function") {
+      return JSON.parse(globalThis.__browsifyHostGetModifierKeys());
+    }
+    return {
+      shift: false,
+      option: false,
+      command: false,
+      control: false,
+      capsLock: false,
+      fn: false,
+      function: false,
+    };
+  },
+  getSystemInfo: () => {
+    if (typeof globalThis.__browsifyHostGetSystemInfo === "function") {
+      return JSON.parse(globalThis.__browsifyHostGetSystemInfo());
+    }
+    return { localizedName: "Mac", name: "mac" };
+  },
+  getPowerInfo: () => {
+    if (typeof globalThis.__browsifyHostGetPowerInfo === "function") {
+      return JSON.parse(globalThis.__browsifyHostGetPowerInfo());
+    }
+    return { isCharging: false, isConnected: true, percentage: 100 };
+  },
   getBattery: () => {
     console.error("finicky.getBattery is unavailable. Use finicky.getPowerInfo instead. Returning dummy values.");
     return { isCharging: false, isPluggedIn: false, chargePercentage: 0 };
   },
-  isAppRunning: (id) => globalThis.__browsifyRunningApps.includes(String(id)),
-  notify: (title, subtitle) => {
+  isAppRunning: (id) => {
+    if (typeof globalThis.__browsifyHostIsAppRunning === "function") {
+      return Boolean(globalThis.__browsifyHostIsAppRunning(String(id)));
+    }
+    return false;
+  },
+  notify: (_title, _subtitle) => {
     console.error("finicky.notify is unavailable. Use console.log, console.warn or console.error instead.");
     return undefined;
   },
@@ -546,26 +594,38 @@ function resolveBrowserSpecJS(spec, url, options) {
     };
   }
   if (typeof resolved === "string") {
-    const [name, profile] = resolved.split(":");
+    const [name, rawProfile] = resolved.split(":");
+    let profile = rawProfile || "";
+    let container = undefined;
+    if (profile.startsWith("container:")) {
+      container = profile.slice("container:".length) || undefined;
+      profile = "";
+    }
     return {
       name,
       appType: autodetectAppStringType(name),
-      profile: profile || "",
+      profile,
+      container,
       args: [],
       url: url.href,
     };
   }
   if (typeof resolved === "object" && typeof resolved.name === "string") {
+    let profile = resolved.profile || "";
+    let container = resolved.container || undefined;
+    if (!container && profile.startsWith("container:")) {
+      container = profile.slice("container:".length) || undefined;
+      profile = "";
+    }
     return {
       name: resolved.name,
       appType: resolved.appType || autodetectAppStringType(resolved.name),
       openInBackground:
         typeof resolved.openInBackground === "boolean" ? resolved.openInBackground : undefined,
-      profile: resolved.profile || "",
-      container: resolved.container || undefined,
+      profile,
+      container,
       appId: resolved.appId || undefined,
       appMode: typeof resolved.appMode === "boolean" ? resolved.appMode : undefined,
-      space: resolved.space || undefined,
       args: Array.isArray(resolved.args) ? resolved.args.map(String) : [],
       url: url.href,
     };
@@ -585,8 +645,8 @@ globalThis.__browsifyInspectConfig = function () {
     throw new Error("Invalid config: Configuration must export an object");
   }
 
-  // Validate defaultBrowser
   if (
+    cfg.defaultBrowser !== undefined &&
     cfg.defaultBrowser !== null &&
     typeof cfg.defaultBrowser !== "string" &&
     typeof cfg.defaultBrowser !== "function" &&
@@ -597,25 +657,22 @@ globalThis.__browsifyInspectConfig = function () {
 
   globalThis.__browsifyActiveConfig = cfg;
 
+  // Safe marker-based lowering only: never regex-sniff arbitrary JS function bodies!
   function inspectMatcher(m) {
     if (typeof m === "string") {
+      if (m === "*") {
+        return { static: true, kind: "always" };
+      }
       return { static: true, kind: "wildcard", pattern: m };
     }
     if (m instanceof RegExp) {
-      return { static: true, kind: "regex", pattern: m.source };
+      return { static: true, kind: "regex", pattern: m.source, flags: m.flags || "" };
     }
     if (typeof m === "function" && Array.isArray(m.__browsifyHostnames)) {
       return { static: true, kind: "hostnames", patterns: m.__browsifyHostnames };
     }
-    if (typeof m === "function") {
-      const fnSrc = Function.prototype.toString.call(m).replace(/\s+/g, " ").trim();
-      if (/^(?:\([^)]*\)|[A-Za-z0-9_$]+)\s*=>\s*true$/.test(fnSrc) || /^function\s*\([^)]*\)\s*\{\s*return\s+true\s*;?\s*\}$/.test(fnSrc)) {
-        return { static: true, kind: "always" };
-      }
-      const openerMatch = /opener(?:\?\.|\s*&&\s*opener\.)bundleId\s*===\s*["']([^"']+)["']/.exec(fnSrc);
-      if (openerMatch && !fnSrc.includes("||") && !fnSrc.includes("url.")) {
-        return { static: true, kind: "openerBundleId", bundleIds: [openerMatch[1]] };
-      }
+    if (typeof m === "function" && Array.isArray(m.__browsifyOpenerBundleIds)) {
+      return { static: true, kind: "openerBundleId", bundleIds: m.__browsifyOpenerBundleIds };
     }
     if (Array.isArray(m)) {
       const items = m.map(inspectMatcher);
@@ -627,45 +684,36 @@ globalThis.__browsifyInspectConfig = function () {
     return { static: false };
   }
 
-  function inspectRewriteTransform(urlTransform) {
-    if (typeof urlTransform === "string") {
-      return { static: true, kind: "replaceUrl", url: urlTransform };
+  function inspectRewriteTransform(rw) {
+    if (rw && Array.isArray(rw.__browsifyStripParams)) {
+      return { static: true, kind: "stripParams", params: rw.__browsifyStripParams };
     }
-    if (typeof urlTransform === "function") {
-      const fnSrc = Function.prototype.toString.call(urlTransform).replace(/\s+/g, " ").trim();
-      // Detect `(url) => ({ ...url, protocol: "https" })` or `url.protocol = "https"`
-      if (/protocol\s*[:=]\s*["']https:?["']/.test(fnSrc) && !fnSrc.includes("host")) {
-        return { static: true, kind: "forceHttps" };
-      }
-      // Detect `url.host = "xcancel.com"`
-      const hostMatch = /\.host\s*=\s*["']([^"']+)["']/.exec(fnSrc);
-      if (hostMatch && !fnSrc.includes("pathname") && !fnSrc.includes("search")) {
-        return { static: true, kind: "replaceHost", host: hostMatch[1] };
-      }
-      // Detect `removeKeys = ["utm_source", ...] ... searchParams.delete`
-      const arrayMatch = /\[([^\]]+)\][^{]*searchParams\.delete/.exec(fnSrc);
-      if (arrayMatch) {
-        const keys = [];
-        const strRe = /["']([^"']+)["']/g;
-        let m;
-        while ((m = strRe.exec(arrayMatch[1])) !== null) {
-          keys.push(m[1]);
-        }
-        if (keys.length > 0) {
-          return { static: true, kind: "stripParams", params: keys };
-        }
-      }
+    if (rw && rw.__browsifyForceHttps === true) {
+      return { static: true, kind: "forceHttps" };
+    }
+    if (rw && typeof rw.__browsifyReplaceHost === "string") {
+      return { static: true, kind: "replaceHost", host: rw.__browsifyReplaceHost };
+    }
+    if (rw && typeof rw.url === "string") {
+      return { static: true, kind: "replaceUrl", url: rw.url };
     }
     return { static: false };
   }
 
   function inspectBrowser(b) {
+    if (b === undefined) {
+      return {
+        static: true,
+        explicit: false,
+        spec: resolveBrowserSpecJS("com.apple.Safari", new URLPolyfill("https://example.com"), { opener: null }),
+      };
+    }
     if (b === null || typeof b === "string" || (typeof b === "object" && typeof b.name === "string")) {
       const spec = resolveBrowserSpecJS(b, new URLPolyfill("https://example.com"), { opener: null });
       delete spec.url;
-      return { static: true, spec };
+      return { static: true, explicit: true, spec };
     }
-    return { static: false };
+    return { static: false, explicit: true };
   }
 
   const defBrowser = inspectBrowser(cfg.defaultBrowser);
@@ -674,25 +722,17 @@ globalThis.__browsifyInspectConfig = function () {
 
   if (Array.isArray(cfg.rewrite)) {
     for (const r of cfg.rewrite) {
-      if (r && Array.isArray(r.__browsifyStripParams)) {
+      const m = inspectMatcher(r.match);
+      const t = inspectRewriteTransform(r);
+      if (m.static && t.static) {
         rewrites.push({
           static: true,
-          matcher: { static: true, kind: "always" },
-          transform: { kind: "stripParams", params: r.__browsifyStripParams },
+          matcher: m,
+          transform: t,
         });
       } else {
-        const m = inspectMatcher(r.match);
-        const t = inspectRewriteTransform(r.url);
-        if (m.static && t.static) {
-          rewrites.push({
-            static: true,
-            matcher: m,
-            transform: t,
-          });
-        } else {
-          allStatic = false;
-          rewrites.push({ static: false });
-        }
+        allStatic = false;
+        rewrites.push({ static: false });
       }
     }
   }
@@ -718,50 +758,59 @@ globalThis.__browsifyInspectConfig = function () {
     rewrites,
     handlers,
     options: {
-      keepRunning: typeof opts.keepRunning === "boolean" ? opts.keepRunning : true,
-      hideIcon: typeof opts.hideIcon === "boolean" ? opts.hideIcon : false,
-      logRequests: typeof opts.logRequests === "boolean" ? opts.logRequests : false,
-      checkForUpdates: typeof opts.checkForUpdates === "boolean" ? opts.checkForUpdates : true,
+      keepRunning: typeof opts.keepRunning === "boolean" ? opts.keepRunning : undefined,
+      hideIcon: typeof opts.hideIcon === "boolean" ? opts.hideIcon : undefined,
+      logRequests: typeof opts.logRequests === "boolean" ? opts.logRequests : undefined,
+      checkForUpdates: typeof opts.checkForUpdates === "boolean" ? opts.checkForUpdates : undefined,
     },
   });
 };
 
-globalThis.__browsifyOpenUrl = function (urlString, openerJson, originalUrlString, fallbackRulesJson) {
+globalThis.__browsifyEvalRewriteStep = function (index, currentUrlStr, originalUrlStr, openerJson) {
   const cfg = globalThis.__browsifyActiveConfig;
-  if (!cfg) throw new Error("Invalid config");
+  const rw = cfg?.rewrite?.[index];
+  if (!rw) return currentUrlStr;
 
   const opener = openerJson ? JSON.parse(openerJson) : null;
-  let url = new FinickyURL(urlString, opener);
-  const options = { opener };
-  if (originalUrlString) {
-    options.originalUrl = new FinickyURL(originalUrlString, opener);
-  }
+  const url = new FinickyURL(currentUrlStr, opener);
+  const options = {
+    opener,
+    originalUrl: new FinickyURL(originalUrlStr || currentUrlStr, opener),
+  };
 
-  if (Array.isArray(cfg.rewrite)) {
-    for (const rw of cfg.rewrite) {
-      if (isMatchJS(rw.match, url, options)) {
-        url = rewriteUrlJS(rw.url, url, options);
-      }
-    }
+  if (isMatchJS(rw.match, url, options)) {
+    const rewritten = rewriteUrlJS(rw.url, url, options);
+    return rewritten.href;
   }
+  return url.href;
+};
 
-  if (Array.isArray(cfg.handlers)) {
-    for (const h of cfg.handlers) {
-      if (isMatchJS(h.match, url, options)) {
-        return JSON.stringify(resolveBrowserSpecJS(h.browser, url, options));
-      }
-    }
+globalThis.__browsifyEvalHandlerStep = function (index, currentUrlStr, originalUrlStr, openerJson) {
+  const cfg = globalThis.__browsifyActiveConfig;
+  const h = cfg?.handlers?.[index];
+  if (!h) return "";
+
+  const opener = openerJson ? JSON.parse(openerJson) : null;
+  const url = new FinickyURL(currentUrlStr, opener);
+  const options = {
+    opener,
+    originalUrl: new FinickyURL(originalUrlStr || currentUrlStr, opener),
+  };
+
+  if (isMatchJS(h.match, url, options)) {
+    return JSON.stringify(resolveBrowserSpecJS(h.browser, url, options));
   }
+  return "";
+};
 
-  if (fallbackRulesJson) {
-    const fallbackRules = JSON.parse(fallbackRulesJson);
-    for (const r of fallbackRules) {
-      if (isMatchJS(r.match, url, options)) {
-        return JSON.stringify(resolveBrowserSpecJS(r.browser, url, options));
-      }
-    }
-  }
-
+globalThis.__browsifyEvalDefaultBrowser = function (currentUrlStr, originalUrlStr, openerJson) {
+  const cfg = globalThis.__browsifyActiveConfig;
+  const opener = openerJson ? JSON.parse(openerJson) : null;
+  const url = new FinickyURL(currentUrlStr, opener);
+  const options = {
+    opener,
+    originalUrl: new FinickyURL(originalUrlStr || currentUrlStr, opener),
+  };
   return JSON.stringify(resolveBrowserSpecJS(cfg.defaultBrowser, url, options));
 };
 })();

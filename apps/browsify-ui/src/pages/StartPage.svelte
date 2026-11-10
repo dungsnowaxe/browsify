@@ -12,7 +12,7 @@
   import { toast } from "../lib/toast";
 
   function onLockedClick() {
-    toast.show("JS config is active", "info", "These settings are managed by your JavaScript config file and can't be changed here.");
+    toast.show("Primary config is active", "info", "These settings are managed by your primary configuration file (.toml/.js/.ts) and can't be changed here.");
   }
 
   export let hasConfig: boolean;
@@ -27,11 +27,11 @@
   const SAVE_DEBOUNCE = 500;
   let saveTimer: ReturnType<typeof setTimeout>;
 
-  // Local editable state, seeded from rules.json overrides then JS config then defaults
+  // Local editable state, seeded from rules.json overrides then primary config then defaults
   let keepRunning = rulesFile.options?.keepRunning ?? config.options?.keepRunning ?? true;
   let hideIcon = rulesFile.options?.hideIcon ?? config.options?.hideIcon ?? false;
   let logRequests = rulesFile.options?.logRequests ?? config.options?.logRequests ?? false;
-  let checkForUpdates = rulesFile.options?.checkForUpdates ?? config.options?.checkForUpdates ?? true;
+  let checkForUpdates = rulesFile.options?.checkForUpdates ?? config.options?.checkForUpdates ?? false;
 
   const SAFARI = "Safari";
 
@@ -46,7 +46,7 @@
     keepRunning = rulesFile.options?.keepRunning ?? config.options?.keepRunning ?? true;
     hideIcon = rulesFile.options?.hideIcon ?? config.options?.hideIcon ?? false;
     logRequests = rulesFile.options?.logRequests ?? config.options?.logRequests ?? false;
-    checkForUpdates = rulesFile.options?.checkForUpdates ?? config.options?.checkForUpdates ?? true;
+    checkForUpdates = rulesFile.options?.checkForUpdates ?? config.options?.checkForUpdates ?? false;
     defaultBrowser = isJSConfig ? (config.defaultBrowser ?? "") : (rulesFile.defaultBrowser || SAFARI);
     defaultProfile = rulesFile.defaultProfile ?? "";
   }

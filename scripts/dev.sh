@@ -1,42 +1,38 @@
 #!/bin/bash
-# Run Finicky in a specific test scenario without building.
+# Run Browsify in a specific test scenario without building.
 #
 # Usage:
 #   ./scripts/dev.sh [scenario]
 #
 # Scenarios:
 #   0  normal  Auto-detect configs
-#   1  none    No JS config, no rules.json
+#   1  none    No primary config, no rules.json
 #   2  js      JS config only
 #   3  json    rules.json only
 #   4  both    JS config + rules.json
-#
-# Environment variables:
-#   FINICKY_MOCK_UPDATE=1.99.0  Show update banner with given version
 
 set -e
 
-BINARY="apps/finicky/build/Finicky.app/Contents/MacOS/Finicky"
+BINARY="apps/browsify/build/Browsify.app/Contents/MacOS/browsify"
+if [[ ! -x "$BINARY" && -x "target/release/browsify" ]]; then
+  BINARY="target/release/browsify"
+elif [[ ! -x "$BINARY" && -x "target/debug/browsify" ]]; then
+  BINARY="target/debug/browsify"
+fi
+
 JS_CONFIG="$(pwd)/testdata/config.js"
 JSON_RULES="$(pwd)/testdata/rules.json"
-NO_RULES="/tmp/finicky-dev-no-rules-$(date +%s).json"  # unique per run, intentionally absent
-
-if [[ -n "$FINICKY_MOCK_UPDATE" ]]; then
-  echo "Mock update enabled: v$FINICKY_MOCK_UPDATE"
-fi
+NO_RULES="/tmp/browsify-dev-no-rules-$(date +%s).json"
 
 SCENARIO="${1}"
 if [[ -z "$SCENARIO" ]]; then
   echo "Usage: $0 <scenario>"
   echo ""
   echo "  0  normal  Auto-detect configs"
-  echo "  1  none    No JS config, no rules.json"
+  echo "  1  none    No primary config, no rules.json"
   echo "  2  js      JS config only  ($JS_CONFIG)"
   echo "  3  json    rules.json only ($JSON_RULES)"
   echo "  4  both    JS config + rules.json"
-  echo ""
-  echo "Environment variables:"
-  echo "  FINICKY_MOCK_UPDATE=1.99.0  Show update banner with given version"
   exit 0
 fi
 
@@ -46,7 +42,7 @@ case "$SCENARIO" in
     "$BINARY" --window
     ;;
   1|none)
-    echo "Scenario 1: no JS config, no rules.json"
+    echo "Scenario 1: no primary config, no rules.json"
     "$BINARY" --window --no-config --rules "$NO_RULES"
     ;;
   2|js)
@@ -65,7 +61,7 @@ case "$SCENARIO" in
     echo "Unknown scenario: $SCENARIO"
     echo ""
     echo "  0  normal  Auto-detect configs"
-    echo "  1  none    No JS config, no rules.json"
+    echo "  1  none    No primary config, no rules.json"
     echo "  2  js      JS config only  ($JS_CONFIG)"
     echo "  3  json    rules.json only ($JSON_RULES)"
     echo "  4  both    JS config + rules.json"

@@ -1,4 +1,4 @@
 #!/bin/bash
 
-fd . --type f packages/config-api packages/finicky-ui apps/finicky \
-  | entr -r sh -c 'clear && DEBUG=true ./scripts/build.sh && ./apps/finicky/build/Finicky.app/Contents/MacOS/Finicky && echo "$?"'
+fd . --type f packages/browsify-core packages/browsify-js apps/browsify apps/browsify-ui \
+  | entr -r sh -c 'clear && DEBUG=true ./scripts/build.sh && ./apps/browsify/build/Browsify.app/Contents/MacOS/browsify && echo "$?"'

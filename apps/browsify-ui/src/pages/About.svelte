@@ -12,18 +12,18 @@
 <PageContainer>
   <div class="logo-section">
     <div class="app-info">
-      <span class="app-name">Finicky</span>
+      <span class="app-name">Browsify</span>
       <span class="version">Version {version}</span>
     </div>
   </div>
 
   <div class="section">
     <p>
-      Finicky is a macOS application that lets you set up rules to decide which
-      browser to open for every link.
+      Browsify is an ultra-lean Rust URL router and browser profile launcher for
+      macOS, with 100% drop-in compatibility for Finicky v3/v4 configurations.
     </p>
     <a
-      href="https://github.com/johnste/finicky"
+      href="https://github.com/snowaxe/browsify"
       target="_blank"
       rel="noopener noreferrer"
       class="repo-link"
@@ -33,13 +33,24 @@
   </div>
 
   <div class="section">
-    <h2>Credits</h2>
+    <h2>Credits &amp; Attribution</h2>
     <p>
-      Created by <a
+      Rust rewrite &amp; hybrid architecture by <a
+        href="https://github.com/snowaxe"
+        target="_blank"
+        rel="noopener noreferrer">@snowaxe</a
+      >
+    </p>
+    <p>
+      Based on <a
+        href="https://github.com/johnste/finicky"
+        target="_blank"
+        rel="noopener noreferrer">Finicky</a
+      >, originally created by <a
         href="https://github.com/johnste"
         target="_blank"
         rel="noopener noreferrer">John Sterling</a
-      >
+      > (MIT License)
     </p>
     <p>
       Icon designed by <a
@@ -47,23 +58,6 @@
         target="_blank"
         rel="noopener noreferrer">@uetchy</a
       >
-    </p>
-    <p>
-      <a
-        href="https://github.com/johnste/finicky/graphs/contributors"
-        target="_blank"
-        rel="noopener noreferrer">View all contributors</a
-      >
-    </p>
-  </div>
-
-  <div class="section">
-    <p>
-      If you find Finicky useful, consider <a
-        href="https://github.com/sponsors/johnste"
-        target="_blank"
-        rel="noopener noreferrer">sponsoring the project</a
-      >.
     </p>
   </div>
 </PageContainer>

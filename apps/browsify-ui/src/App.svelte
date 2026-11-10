@@ -86,12 +86,19 @@
   // Clear all logs
   function clearAllLogs() {
     messageBuffer = [];
+    window.finicky?.sendMessage({ type: "clearLogs" });
+  }
+
+  function getSessionToken(): string {
+    if (window.__BROWSIFY_TOKEN__) return window.__BROWSIFY_TOKEN__;
+    const params = new URLSearchParams(window.location.search);
+    return params.get("token") ?? "";
   }
 
   // Capture any messages buffered by the WKUserScript stub before Svelte loaded.
   const _preloadQueue: any[] = window.finicky?._queue ?? [];
 
-  // Replace the stub with the real implementation (supports both WKWebView and on-demand localhost HTTP bridge).
+  // Replace the stub with the real implementation (supports both WKWebView and token-authenticated localhost HTTP/SSE bridge).
   window.finicky = {
     sendMessage: (msg: any) => {
       if (window.webkit?.messageHandlers?.finicky) {
@@ -99,9 +106,13 @@
           JSON.stringify(msg)
         );
       } else {
-        fetch("/api/rpc", {
+        const token = getSessionToken();
+        fetch(`/api/rpc?token=${encodeURIComponent(token)}`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "X-Browsify-Token": token,
+          },
           body: JSON.stringify(msg),
         })
           .then((res) => res.json())
@@ -126,6 +137,17 @@
   // Request initial state, rules file info, and browsers on startup.
   if (!window.webkit?.messageHandlers?.finicky) {
     window.finicky.sendMessage({ type: "getInitState" });
+    const token = getSessionToken();
+    if (token && typeof EventSource !== "undefined") {
+      const es = new EventSource(`/api/events?token=${encodeURIComponent(token)}`);
+      es.onmessage = (ev) => {
+        try {
+          handleMessage(JSON.parse(ev.data));
+        } catch (err) {
+          console.error("Browsify SSE parse error:", err);
+        }
+      };
+    }
   }
   window.finicky.sendMessage({ type: "getRules" });
   window.finicky.sendMessage({ type: "getInstalledBrowsers" });
@@ -185,12 +207,15 @@
         {/if}
       {:else}
         <span class="config-status warning">No config</span>
-        <a href="https://github.com/johnste/finicky/wiki/Getting-started" target="_blank" rel="noopener noreferrer" class="config-link">
+        <a href="https://github.com/snowaxe/browsify" target="_blank" rel="noopener noreferrer" class="config-link">
           Get started
           <ExternalIcon />
         </a>
       {/if}
       <span class="spacer"></span>
+      {#if config.format}
+        <span class="version">{config.pureNativeFastPath ? "⚡ Native Fast Path" : "⚡ Hybrid QuickJS"}</span>
+      {/if}
       {#if updateInfo && updateInfo.updateCheckEnabled && !updateInfo.hasUpdate}
         <span class="up-to-date">✓ Up to date</span>
       {/if}

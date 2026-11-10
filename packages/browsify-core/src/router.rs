@@ -16,6 +16,7 @@ pub enum CompiledMatcher {
     Regex(Regex),
     Hostnames(Vec<HostnamePattern>),
     OpenerBundleId(Vec<String>),
+    OpenerWindowTitle(Vec<String>),
     Any(Vec<CompiledMatcher>),
     All(Vec<CompiledMatcher>),
     Always,
@@ -36,6 +37,16 @@ impl CompiledMatcher {
             None
         };
         CompiledMatcher::Wildcard { raw, regex }
+    }
+
+    pub fn uses_window_title(&self) -> bool {
+        match self {
+            CompiledMatcher::OpenerWindowTitle(_) => true,
+            CompiledMatcher::Any(list) | CompiledMatcher::All(list) => {
+                list.iter().any(|m| m.uses_window_title())
+            }
+            _ => false,
+        }
     }
 
     pub fn matches(&self, url: &Url, url_href: &str, opener: Option<&OpenerInfo>) -> bool {
@@ -77,6 +88,18 @@ impl CompiledMatcher {
                     return false;
                 };
                 ids.iter().any(|id| id == &op.bundle_id)
+            }
+            CompiledMatcher::OpenerWindowTitle(pats) => {
+                let Some(title) = opener.and_then(|o| o.window_title.as_deref()) else {
+                    return false;
+                };
+                pats.iter().any(|pat| {
+                    if pat.contains('*') {
+                        match_wildcard(pat, title)
+                    } else {
+                        title.contains(pat.as_str())
+                    }
+                })
             }
             CompiledMatcher::Any(list) => list.iter().any(|m| m.matches(url, url_href, opener)),
             CompiledMatcher::All(list) => list.iter().all(|m| m.matches(url, url_href, opener)),
@@ -177,7 +200,7 @@ impl Default for ConfigOptions {
             keep_running: true,
             hide_icon: false,
             log_requests: false,
-            check_for_updates: true,
+            check_for_updates: false,
             resolve_short_urls: false,
             on_missing_profile: MissingProfilePolicy::WarnAndFallback,
         }
@@ -187,6 +210,7 @@ impl Default for ConfigOptions {
 #[derive(Debug, Clone)]
 pub struct NativeRouter {
     pub default_browser: BrowserConfig,
+    pub has_explicit_default_browser: bool,
     pub rewrites: Vec<CompiledRewrite>,
     pub handlers: Vec<CompiledHandler>,
     pub fallback_handlers: Vec<CompiledHandler>,
@@ -197,6 +221,7 @@ impl Default for NativeRouter {
     fn default() -> Self {
         Self {
             default_browser: BrowserConfig::safari_default("", false),
+            has_explicit_default_browser: false,
             rewrites: Vec::new(),
             handlers: Vec::new(),
             fallback_handlers: Vec::new(),
@@ -206,14 +231,29 @@ impl Default for NativeRouter {
 }
 
 impl NativeRouter {
+    pub fn uses_window_title(&self) -> bool {
+        self.rewrites.iter().any(|r| r.matcher.uses_window_title())
+            || self.handlers.iter().any(|h| h.matcher.uses_window_title())
+            || self
+                .fallback_handlers
+                .iter()
+                .any(|h| h.matcher.uses_window_title())
+    }
+
     pub fn from_rules_file(rf: &RulesFile) -> Self {
+        let has_explicit_default_browser = !rf.default_browser.is_empty();
         let mut default_browser = if rf.default_browser.is_empty() {
             BrowserConfig::safari_default("", false)
         } else {
             BrowserConfig::from_spec_str(&rf.default_browser, "")
         };
         if !rf.default_profile.is_empty() {
-            default_browser.profile = rf.default_profile.clone();
+            if let Some(c) = rf.default_profile.strip_prefix("container:") {
+                default_browser.container = (!c.is_empty()).then(|| c.to_string());
+                default_browser.profile.clear();
+            } else {
+                default_browser.profile = rf.default_profile.clone();
+            }
         }
 
         let mut options = ConfigOptions::default();
@@ -235,6 +275,7 @@ impl NativeRouter {
         let handlers = compile_json_rules(&rf.rules);
         Self {
             default_browser,
+            has_explicit_default_browser,
             rewrites: Vec::new(),
             handlers,
             fallback_handlers: Vec::new(),
@@ -243,6 +284,7 @@ impl NativeRouter {
     }
 
     pub fn from_toml_config(toml_cfg: &TomlConfig) -> Result<Self, String> {
+        let has_explicit_default_browser = toml_cfg.default_browser.is_some();
         let default_browser = match &toml_cfg.default_browser {
             Some(target) => target.to_browser_config(&toml_cfg.browsers, ""),
             None => BrowserConfig::safari_default("", false),
@@ -343,6 +385,9 @@ impl NativeRouter {
             if let Some(openers) = &h.opener_bundle_id {
                 conditions.push(CompiledMatcher::OpenerBundleId(openers.clone().into_vec()));
             }
+            if let Some(titles) = &h.opener_window_title {
+                conditions.push(CompiledMatcher::OpenerWindowTitle(titles.clone().into_vec()));
+            }
 
             if conditions.is_empty() {
                 continue;
@@ -358,6 +403,7 @@ impl NativeRouter {
 
         Ok(Self {
             default_browser,
+            has_explicit_default_browser,
             rewrites,
             handlers,
             fallback_handlers: Vec::new(),
@@ -367,6 +413,52 @@ impl NativeRouter {
 
     pub fn set_fallback_rules(&mut self, rules: &[Rule]) {
         self.fallback_handlers = compile_json_rules(rules);
+    }
+
+    /// Applies `rules.json` handlers and inherits `defaultBrowser`/`options` when not explicitly set by the Primary Config.
+    pub fn apply_rules_file_fallbacks(
+        &mut self,
+        rf: &RulesFile,
+        explicit_keep_running: bool,
+        explicit_hide_icon: bool,
+        explicit_log_requests: bool,
+        explicit_check_for_updates: bool,
+    ) {
+        self.fallback_handlers = compile_json_rules(&rf.rules);
+        if !self.has_explicit_default_browser && !rf.default_browser.is_empty() {
+            let mut db = BrowserConfig::from_spec_str(&rf.default_browser, "");
+            if !rf.default_profile.is_empty() {
+                if let Some(c) = rf.default_profile.strip_prefix("container:") {
+                    db.container = (!c.is_empty()).then(|| c.to_string());
+                    db.profile.clear();
+                } else {
+                    db.profile = rf.default_profile.clone();
+                }
+            }
+            self.default_browser = db;
+        }
+        if let Some(opts) = &rf.options {
+            if !explicit_keep_running {
+                if let Some(v) = opts.keep_running {
+                    self.options.keep_running = v;
+                }
+            }
+            if !explicit_hide_icon {
+                if let Some(v) = opts.hide_icon {
+                    self.options.hide_icon = v;
+                }
+            }
+            if !explicit_log_requests {
+                if let Some(v) = opts.log_requests {
+                    self.options.log_requests = v;
+                }
+            }
+            if !explicit_check_for_updates {
+                if let Some(v) = opts.check_for_updates {
+                    self.options.check_for_updates = v;
+                }
+            }
+        }
     }
 
     /// Resolves `raw_url` through all compiled rewrites, primary handlers, and fallback JSON rules.
@@ -428,9 +520,14 @@ pub fn compile_json_rules(rules: &[Rule]) -> Vec<CompiledHandler> {
             CompiledMatcher::Any(valid_pats)
         };
         let mut target = TomlBrowserTarget::NameOrAlias(r.browser.clone())
-            .to_browser_config(& Default::default(), "");
+            .to_browser_config(&Default::default(), "");
         if !r.profile.is_empty() {
-            target.profile = r.profile.clone();
+            if let Some(c) = r.profile.strip_prefix("container:") {
+                target.container = (!c.is_empty()).then(|| c.to_string());
+                target.profile.clear();
+            } else {
+                target.profile = r.profile.clone();
+            }
         }
         out.push(CompiledHandler { matcher, target });
     }

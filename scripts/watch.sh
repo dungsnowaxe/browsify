@@ -1,4 +1,4 @@
 #!/bin/bash
 
-fd . --type f packages/config-api packages/finicky-ui apps/finicky \
-  | entr -r sh -c 'clear && ./scripts/build.sh && killall Finicky && echo "$?"'
+fd . --type f packages/browsify-core packages/browsify-js apps/browsify apps/browsify-ui \
+  | entr -r sh -c 'clear && ./scripts/build.sh && killall browsify && echo "$?"'

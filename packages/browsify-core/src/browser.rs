@@ -78,8 +78,6 @@ pub struct BrowserConfig {
     pub app_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub app_mode: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub space: Option<String>,
     #[serde(default)]
     pub args: Vec<String>,
     #[serde(default)]
@@ -96,7 +94,6 @@ impl BrowserConfig {
             container: None,
             app_id: None,
             app_mode: None,
-            space: None,
             args: Vec::new(),
             url: url.into(),
         }
@@ -108,15 +105,19 @@ impl BrowserConfig {
             _ => (spec, ""),
         };
         let app_type = autodetect_app_string_type(Some(name_part));
+        let (profile, container) = if let Some(c) = profile_part.strip_prefix("container:") {
+            (String::new(), (!c.is_empty()).then(|| c.to_string()))
+        } else {
+            (profile_part.to_string(), None)
+        };
         Self {
             name: name_part.to_string(),
             app_type,
             open_in_background: None,
-            profile: profile_part.to_string(),
-            container: None,
+            profile,
+            container,
             app_id: None,
             app_mode: None,
-            space: None,
             args: Vec::new(),
             url: url.into(),
         }
@@ -131,7 +132,6 @@ impl BrowserConfig {
             container: None,
             app_id: None,
             app_mode: None,
-            space: None,
             args: Vec::new(),
             url: url.into(),
         }
@@ -146,7 +146,6 @@ fn s_is_path(s: &str) -> bool {
 pub enum BrowserFamily {
     Chromium,
     Firefox,
-    Arc,
     Safari,
 }
 
@@ -268,18 +267,12 @@ pub const BROWSERS_REGISTRY: &[BrowserMeta] = &[
         config_dir_relative: "com.operasoftware.OperaGX",
         family: BrowserFamily::Chromium,
     },
-    // Arc & Dia
-    BrowserMeta {
-        id: "company.thebrowser.Browser",
-        app_name: "Arc",
-        config_dir_relative: "Arc/User Data",
-        family: BrowserFamily::Arc,
-    },
+    // Dia (Chromium family)
     BrowserMeta {
         id: "company.thebrowser.dia",
         app_name: "Dia",
         config_dir_relative: "Dia/User Data",
-        family: BrowserFamily::Arc,
+        family: BrowserFamily::Chromium,
     },
     // Firefox family
     BrowserMeta {

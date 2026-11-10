@@ -1,0 +1,3 @@
+# On-Demand Loopback HTTP UI Server Instead of Resident WKWebView
+
+Browsify serves its visual configuration and URL-testing UI (`apps/browsify-ui`) on demand over an ephemeral, token-authenticated `127.0.0.1:0` HTTP and Server-Sent Events (SSE) server opened in the user's browser, automatically shutting the server down after the last UI tab disconnects. We chose this over linking macOS `WebKit.framework` and hosting an in-process `WKWebView` window (which permanently adds 40–80+ MB RSS to the background daemon even after the window is closed), keeping idle UI memory overhead at 0 bytes while preserving the full visual Rule Builder, URL Tester, Profile Selector, and Log Viewer experience.

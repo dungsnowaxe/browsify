@@ -23,7 +23,9 @@ pub use rules::{
     Rule, RulesFile, RulesOptions, TomlBrowserSpec, TomlBrowserTarget, TomlConfig, TomlHandlerRule,
     TomlOptions, TomlRewriteRule,
 };
-pub use shorturl::{is_short_url, resolve_short_url, SHORTENER_DOMAINS};
+pub use shorturl::{
+    is_short_url, resolve_short_url, set_custom_short_url_resolver, SHORTENER_DOMAINS,
+};
 pub use wildcard::{compile_wildcard, match_wildcard};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -44,6 +46,7 @@ pub struct ModifierKeys {
     pub command: bool,
     pub control: bool,
     pub caps_lock: bool,
+    #[serde(rename = "fn")]
     pub fn_key: bool,
     pub function: bool,
 }
