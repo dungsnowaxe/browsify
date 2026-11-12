@@ -1,22 +1,14 @@
 <script lang="ts">
   import XIcon from "./icons/X.svelte";
   const CUSTOM = "__custom__";
+  const fieldId = `browser-${Math.random().toString(36).slice(2, 9)}`;
 
   let {
-    browser,
-    profile,
-    isCustom,
-    isProfileCustom,
-    installedBrowsers = [],
-    profilesByBrowser = {},
-    disabled = false,
-    required = false,
+    browser, profile, isCustom, isProfileCustom,
+    installedBrowsers = [], profilesByBrowser = {},
+    disabled = false, required = false, hideProfile = false,
     browserPlaceholder = "Select browser",
-    onBrowserChange,
-    onProfileChange,
-    onRequestProfiles,
-    onSave,
-    onInput,
+    onBrowserChange, onProfileChange, onRequestProfiles, onSave, onInput,
   }: {
     browser: string;
     profile: string;
@@ -26,223 +18,88 @@
     profilesByBrowser: Record<string, string[]>;
     disabled?: boolean;
     required?: boolean;
+    hideProfile?: boolean;
     browserPlaceholder?: string;
     onBrowserChange?: (browser: string, profile: string, isCustom: boolean) => void;
     onProfileChange?: (profile: string, isProfileCustom: boolean) => void;
-    onRequestProfiles?: (b: string) => void;
+    onRequestProfiles?: (browser: string) => void;
     onSave?: () => void;
     onInput?: () => void;
   } = $props();
 
-  function profileOptions(b: string): string[] {
-    return profilesByBrowser[b] ?? [];
-  }
-
-  function handleBrowserSelect(e: Event) {
-    const val = (e.target as HTMLSelectElement).value;
-    if (val === CUSTOM) {
+  function handleBrowserSelect(event: Event) {
+    const value = (event.target as HTMLSelectElement).value;
+    if (value === CUSTOM) {
       onBrowserChange?.("", "", true);
     } else {
-      if (val && profilesByBrowser[val] === undefined) {
-        onRequestProfiles?.(val);
-      }
-      onBrowserChange?.(val, "", false);
+      if (value && profilesByBrowser[value] === undefined) onRequestProfiles?.(value);
+      onBrowserChange?.(value, "", false);
       onSave?.();
     }
   }
 
-  function handleBrowserInput(e: Event) {
-    onBrowserChange?.((e.target as HTMLInputElement).value, profile, true);
-    onInput?.();
-  }
-
-  function handleClearBrowser() {
-    onBrowserChange?.("", "", false);
-    onSave?.();
-  }
-
-  function handleProfileSelect(e: Event) {
-    const val = (e.target as HTMLSelectElement).value;
-    if (val === CUSTOM) {
-      onProfileChange?.("", true);
-    } else {
-      onProfileChange?.(val, false);
-      onSave?.();
-    }
-  }
-
-  function handleProfileInput(e: Event) {
-    onProfileChange?.((e.target as HTMLInputElement).value, true);
-    onInput?.();
-  }
-
-  function handleClearProfile() {
-    onProfileChange?.("", false);
-    onSave?.();
+  function handleProfileSelect(event: Event) {
+    const value = (event.target as HTMLSelectElement).value;
+    if (value === CUSTOM) onProfileChange?.("", true);
+    else { onProfileChange?.(value, false); onSave?.(); }
   }
 </script>
 
 <div class="browser-select-row">
-  {#if isCustom}
-    <input
-      class="browser-input"
-      type="text"
-      placeholder="e.g. Firefox"
-      value={browser}
-      oninput={handleBrowserInput}
-      onblur={() => onSave?.()}
-      {disabled}
-    />
-    <button class="clear-btn" onclick={handleClearBrowser} aria-label="Clear browser"><XIcon /></button>
-  {:else}
-    <div class="select-wrapper">
-      <select
-        class="browser-dropdown"
-        value={browser}
-        onchange={handleBrowserSelect}
-        {disabled}
-      >
-        <option value="">{browserPlaceholder}</option>
-        {#each installedBrowsers as b}
-          <option value={b}>{b}</option>
-        {/each}
-        <option value={CUSTOM}>Custom...</option>
-      </select>
+  <div class="field">
+    <label for={fieldId}>Browser</label>
+    <div class="field-control">
+      {#if isCustom}
+        <input id={fieldId} class="browser-input" type="text" placeholder="Browser name or bundle identifier" value={browser} oninput={(event) => { onBrowserChange?.(event.currentTarget.value, profile, true); onInput?.(); }} onblur={() => onSave?.()} {disabled} />
+        <button type="button" class="clear-btn" {disabled} onclick={() => { onBrowserChange?.("", "", false); onSave?.(); }} aria-label="Choose an installed browser"><XIcon /></button>
+      {:else}
+        <div class="select-wrapper" class:empty={required && !browser}>
+          <select id={fieldId} class="browser-dropdown" value={browser} onchange={handleBrowserSelect} {disabled}>
+            <option value="">{browserPlaceholder}</option>
+            {#each installedBrowsers as item}<option value={item}>{item}</option>{/each}
+            <option value={CUSTOM}>Custom browser…</option>
+          </select>
+        </div>
+      {/if}
     </div>
-  {/if}
+  </div>
 
-  {#if !isCustom && browser && profileOptions(browser).length > 0}
-    {#if isProfileCustom}
-      <input
-        class="browser-input"
-        type="text"
-        placeholder="Profile name"
-        value={profile}
-        oninput={handleProfileInput}
-        onblur={() => onSave?.()}
-        {disabled}
-      />
-      <button class="clear-btn" onclick={handleClearProfile} aria-label="Clear profile"><XIcon /></button>
-    {:else}
-    <div class="select-wrapper" class:empty={required && !browser && !isCustom}>
-        <select
-          class="browser-dropdown"
-          value={profile}
-          onchange={handleProfileSelect}
-          {disabled}
-        >
-          <option value="">No profile</option>
-          {#each profileOptions(browser) as p}
-            <option value={p}>{p}</option>
-          {/each}
-          <option value={CUSTOM}>Custom...</option>
-        </select>
+  {#if !hideProfile && !isCustom && browser}
+    <div class="field">
+      <label for={`${fieldId}-profile`}>Profile</label>
+      <div class="field-control">
+        {#if isProfileCustom}
+          <input id={`${fieldId}-profile`} class="browser-input" type="text" placeholder="Profile name" value={profile} oninput={(event) => { onProfileChange?.(event.currentTarget.value, true); onInput?.(); }} onblur={() => onSave?.()} {disabled} />
+          <button type="button" class="clear-btn" {disabled} onclick={() => { onProfileChange?.("", false); onSave?.(); }} aria-label="Choose a browser profile"><XIcon /></button>
+        {:else}
+          <div class="select-wrapper">
+            <select id={`${fieldId}-profile`} class="browser-dropdown" value={profile} onchange={handleProfileSelect} {disabled}>
+              <option value="">Browser default</option>
+              {#each profilesByBrowser[browser] ?? [] as item}<option value={item}>{item}</option>{/each}
+              <option value={CUSTOM}>Custom profile…</option>
+            </select>
+          </div>
+        {/if}
       </div>
-    {/if}
+    </div>
   {/if}
 </div>
 
 <style>
-  .browser-select-row {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-  }
-
-  .select-wrapper {
-    position: relative;
-    flex: 1;
-    min-width: 0;
-  }
-
-  .select-wrapper::after {
-    content: '';
-    position: absolute;
-    right: 14px;
-    top: 50%;
-    transform: translateY(-60%) rotate(45deg);
-    width: 5px;
-    height: 5px;
-    border-right: 2px solid var(--text-secondary);
-    border-bottom: 2px solid var(--text-secondary);
-    pointer-events: none;
-  }
-
-  .select-wrapper:focus-within::after {
-    border-color: var(--accent-color);
-  }
-
-  .browser-dropdown {
-    width: 100%;
-    padding: 7px 32px 7px 12px;
-    background: var(--input-bg);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    color: var(--text-primary);
-    font-size: 0.9em;
-    font-family: inherit;
-    cursor: pointer;
-    -webkit-appearance: none;
-    appearance: none;
-  }
-
-  .browser-dropdown:focus {
-    outline: none;
-    border-color: var(--accent-color);
-  }
-
-  .select-wrapper.empty .browser-dropdown {
-    border-color: var(--log-warning);
-  }
-
-  .select-wrapper.empty::after {
-    border-color: var(--log-warning);
-  }
-
-  .browser-dropdown:disabled {
-    opacity: 0.6;
-    cursor: default;
-  }
-
-  .select-wrapper:has(.browser-dropdown:disabled)::after {
-    opacity: 0.6;
-  }
-
-  .browser-input {
-    flex: 1;
-    min-width: 0;
-    padding: 8px 12px;
-    background: var(--input-bg);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    color: var(--text-primary);
-    font-size: 0.9em;
-    font-family: inherit;
-  }
-
-  .browser-input:focus {
-    outline: none;
-    border-color: var(--accent-color);
-  }
-
-  .browser-input:disabled {
-    opacity: 0.6;
-    cursor: default;
-  }
-
-  .clear-btn {
-    background: none;
-    border: none;
-    color: var(--text-secondary);
-    cursor: pointer;
-    padding: 3px;
-    border-radius: 4px;
-    flex-shrink: 0;
-    display: flex;
-    transition: color 0.15s;
-  }
-
-  .clear-btn:hover {
-    color: var(--log-error);
-  }
+  .browser-select-row { width: 100%; min-width: 0; display: flex; gap: 16px; align-items: flex-start; }
+  .field { flex: 1; min-width: 0; }
+  label { display: block; font-size: 13px; color: var(--text-secondary); margin-bottom: 6px; }
+  .field-control { display: flex; align-items: center; gap: 6px; }
+  .select-wrapper { position: relative; flex: 1; min-width: 0; }
+  .select-wrapper::after { content: ""; position: absolute; right: 16px; top: 50%; transform: translateY(-70%) rotate(45deg); width: 5px; height: 5px; border-right: 1.5px solid var(--text-secondary); border-bottom: 1.5px solid var(--text-secondary); pointer-events: none; }
+  .browser-dropdown, .browser-input { width: 100%; min-height: 44px; padding: 10px 36px 10px 14px; background: var(--browsify-control); border: 1px solid var(--browsify-border-strong); border-radius: var(--browsify-radius-control); color: var(--text-primary); font-size: 14px; appearance: none; }
+  .browser-input { flex: 1; min-width: 0; padding-right: 14px; }
+  .browser-dropdown:focus-visible, .browser-input:focus-visible { outline: 2px solid var(--browsify-link); outline-offset: 2px; }
+  .select-wrapper.empty .browser-dropdown { border-color: var(--log-warning); }
+  .browser-dropdown:disabled, .browser-input:disabled { opacity: 0.65; cursor: default; }
+  .select-wrapper:has(.browser-dropdown:disabled)::after { opacity: 0.5; }
+  .clear-btn { background: var(--browsify-inset); border: 1px solid var(--browsify-border-strong); color: var(--text-secondary); cursor: pointer; width: 44px; height: 44px; padding: 12px; border-radius: 14px; flex-shrink: 0; display: flex; }
+  .clear-btn:not(:disabled):hover { color: var(--log-error); }
+  .clear-btn:disabled { opacity: 0.5; cursor: default; }
+  @media (max-width: 800px) { .browser-select-row { flex-direction: column; gap: 12px; } .field { width: 100%; } }
 </style>

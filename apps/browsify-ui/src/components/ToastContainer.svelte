@@ -2,13 +2,13 @@
   import { toast } from "../lib/toast";
   import type { Toast } from "../lib/toast";
   import { fade, fly } from "svelte/transition";
+  import { onDestroy } from "svelte";
   import { flip } from "svelte/animate";
 
   let toasts: Toast[] = [];
 
-  toast.subscribe((value) => {
-    toasts = value;
-  });
+  const unsubscribe = toast.subscribe((value) => { toasts = value; });
+  onDestroy(unsubscribe);
 </script>
 
 <div class="toast-container">
@@ -44,9 +44,10 @@
 
 <style>
   .toast-container {
-    position: fixed;
-    bottom: 60px;
-    right: 24px;
+    position: absolute;
+    bottom: 76px;
+    right: 32px;
+    max-width: calc(100% - 48px);
     z-index: 9999;
     display: flex;
     flex-direction: column-reverse;
@@ -57,16 +58,18 @@
   .toast {
     display: flex;
     flex-direction: column;
-    align-items: left;
-
+    align-items: flex-start;
     gap: 12px;
-    padding: 12px 16px;
-    border-radius: 8px;
-    background: var(--log-bg);
-    border: 1px solid var(--border-color);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    min-width: 250px;
-    max-width: 400px;
+    padding: 14px 16px;
+    border-radius: 20px;
+    background: var(--browsify-panel);
+    background-image: var(--browsify-panel-gradient);
+    backdrop-filter: blur(18px) saturate(1.3);
+    border: 1px solid var(--browsify-border);
+    box-shadow: var(--browsify-shadow);
+    min-width: 0;
+    width: 400px;
+    max-width: 100%;
     pointer-events: auto;
     position: relative;
   }

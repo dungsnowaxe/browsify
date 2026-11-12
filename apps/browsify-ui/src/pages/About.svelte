@@ -1,6 +1,7 @@
 <script lang="ts">
   import PageContainer from "../components/PageContainer.svelte";
   import ExternalIcon from "../components/icons/External.svelte";
+  import { attrs, materials, ui } from "../design-system/styles";
 
   let {
     version,
@@ -9,65 +10,79 @@
   } = $props();
 </script>
 
-<PageContainer>
-  <div class="logo-section">
+<PageContainer eyebrow="About" title="Browsify">
+  {#snippet description()}
+    URL routing and browser profile launching for macOS.
+  {/snippet}
+
+  <section class={`hero ${attrs(materials.glassPanel).class ?? ""}`} style={attrs(materials.glassPanel).style} data-glass>
+    <img class="brand-mark" src="/favicon.svg" alt="" width="56" height="56" />
     <div class="app-info">
       <span class="app-name">Browsify</span>
       <span class="version">Version {version}</span>
     </div>
-  </div>
-
-  <div class="section">
     <p>
-      Browsify is an ultra-lean Rust URL router and browser profile launcher for
-      macOS, with 100% drop-in compatibility for Finicky v3/v4 configurations.
+      Drop-in Finicky v3/v4 compatibility with a hybrid native + QuickJS pipeline
+      and zero idle UI RAM.
     </p>
     <a
       href="https://github.com/snowaxe/browsify"
       target="_blank"
       rel="noopener noreferrer"
-      class="repo-link"
+      {...attrs(ui.button, ui.primary)}
     >
       View on GitHub <ExternalIcon />
     </a>
-  </div>
+  </section>
 
-  <div class="section">
-    <h2>Credits &amp; Attribution</h2>
+  <section class={`credits ${attrs(materials.glassPanel).class ?? ""}`} style={attrs(materials.glassPanel).style} data-glass>
+    <h2>Credits &amp; attribution</h2>
     <p>
-      Rust rewrite &amp; hybrid architecture by <a
-        href="https://github.com/snowaxe"
-        target="_blank"
-        rel="noopener noreferrer">@snowaxe</a
+      Rust rewrite &amp; hybrid architecture by
+      <a href="https://github.com/snowaxe" target="_blank" rel="noopener noreferrer"
+        >@snowaxe</a
       >
     </p>
     <p>
-      Based on <a
-        href="https://github.com/johnste/finicky"
-        target="_blank"
-        rel="noopener noreferrer">Finicky</a
-      >, originally created by <a
-        href="https://github.com/johnste"
-        target="_blank"
-        rel="noopener noreferrer">John Sterling</a
-      > (MIT License)
+      Based on
+      <a href="https://github.com/johnste/finicky" target="_blank" rel="noopener noreferrer"
+        >Finicky</a
+      >, originally created by
+      <a href="https://github.com/johnste" target="_blank" rel="noopener noreferrer"
+        >John Sterling</a
+      >
+      (MIT License)
     </p>
     <p>
-      Icon designed by <a
-        href="https://github.com/uetchy"
-        target="_blank"
-        rel="noopener noreferrer">@uetchy</a
+      Icon designed by
+      <a href="https://github.com/uetchy" target="_blank" rel="noopener noreferrer"
+        >@uetchy</a
       >
     </p>
-  </div>
+    <p class="asset-credits">Sora and Figtree are licensed under the SIL Open Font License. Browser marks via SVG Logos (CC0). Product names and logos are trademarks of their owners.</p>
+  </section>
 </PageContainer>
 
 <style>
-  .logo-section {
+  .hero,
+  .credits {
+    padding: 24px;
     display: flex;
-    align-items: center;
-    gap: 14px;
-    padding: 4px 0;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .brand-mark {
+    width: 56px;
+    height: 56px;
+    border-radius: 18px;
+    display: grid;
+    place-items: center;
+    background: var(--browsify-accent);
+    color: var(--browsify-on-accent);
+    font-weight: 500;
+    font-size: 1.4rem;
+    box-shadow: var(--browsify-shadow-icon);
   }
 
   .app-info {
@@ -77,10 +92,10 @@
   }
 
   .app-name {
-    font-size: 1.4em;
-    font-weight: 600;
+    font-size: 1.5em;
+    font-weight: 500;
+    letter-spacing: -0.03em;
     color: var(--text-primary);
-    line-height: 1.2;
   }
 
   .version {
@@ -88,44 +103,20 @@
     font-size: 0.85em;
   }
 
-  .section {
-    padding: 16px 20px;
-    background: var(--card-bg);
-    border: 1px solid var(--card-border);
-    border-radius: 12px;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-
-  .section h2 {
-    font-size: 0.8em;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--text-secondary);
-    margin: 0 0 6px 0;
-  }
-
-  .section p {
+  .hero p,
+  .credits p {
     margin: 0;
     line-height: 1.6;
     color: var(--text-secondary);
-    font-size: 0.9em;
+    font-size: 0.95em;
   }
 
-  .repo-link {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    color: var(--accent-color);
-    text-decoration: none;
-    font-size: 0.9em;
-    margin-top: 6px;
-  }
-
-  .repo-link:hover {
-    opacity: 0.8;
+  .credits h2 {
+    font-size: 16px;
+    font-weight: 500;
+    letter-spacing: -0.02em;
+    color: var(--text-secondary);
+    margin: 0 0 4px;
   }
 
   a {
@@ -134,6 +125,6 @@
   }
 
   a:hover {
-    opacity: 0.8;
+    opacity: 0.85;
   }
 </style>
