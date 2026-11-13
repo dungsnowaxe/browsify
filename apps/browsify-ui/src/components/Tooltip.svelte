@@ -1,20 +1,31 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
+  import { attrs, ui } from "../design-system/styles";
 
   let {
     children,
     text,
     block = false,
+    onclick,
   }: {
     children: Snippet;
     text: string;
     block?: boolean;
+    onclick?: () => void;
   } = $props();
+
+  const tipId = `tip-${Math.random().toString(36).slice(2, 9)}`;
 </script>
 
-<span class="tooltip-anchor" class:block>
-  {@render children()}
-  <span class="tooltip-text">{text}</span>
+<span class="tooltip-anchor" class:block aria-describedby={tipId}>
+  {#if onclick}
+    <button type="button" class="trigger" aria-describedby={tipId} {onclick}>
+      {@render children()}
+    </button>
+  {:else}
+    {@render children()}
+  {/if}
+  <span id={tipId} role="tooltip" class={`tooltip-text ${attrs(ui.tooltip).class ?? ""}`} style={attrs(ui.tooltip).style}>{text}</span>
 </span>
 
 <style>
@@ -25,30 +36,32 @@
 
   .tooltip-anchor.block {
     display: flex;
+    width: 100%;
+  }
+
+  .trigger {
+    display: inherit;
+    width: inherit;
+    border: 0;
+    padding: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: inherit;
+    cursor: inherit;
   }
 
   .tooltip-text {
     display: none;
     position: absolute;
-    bottom: calc(100% + 6px);
+    bottom: calc(100% + 8px);
     right: 0;
-    background: var(--card-bg, #222);
-    color: var(--text-primary);
-    border: 1px solid var(--border-color);
-    font-size: 0.78rem;
-    font-family: inherit;
-    white-space: normal;
-    min-width: 160px;
-    max-width: 200px;
-    line-height: 1.4;
-    padding: 5px 8px;
-    border-radius: 5px;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
     pointer-events: none;
-    z-index: 100;
+    white-space: normal;
   }
 
-  .tooltip-anchor:hover .tooltip-text {
+  .tooltip-anchor:hover .tooltip-text,
+  .tooltip-anchor:focus-within .tooltip-text {
     display: block;
   }
 </style>

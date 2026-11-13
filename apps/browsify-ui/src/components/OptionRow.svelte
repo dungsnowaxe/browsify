@@ -1,8 +1,10 @@
 <script lang="ts">
   import LockIcon from "./icons/Lock.svelte";
   import Tooltip from "./Tooltip.svelte";
+  import Toggle from "./Toggle.svelte";
+  import { attrs, ui } from "../design-system/styles";
 
-  const LOCKED_TOOLTIP = "JS config is active — these settings can't be changed here";
+  const LOCKED_TOOLTIP = "Primary config is active — these settings can't be changed here";
 
   let {
     label,
@@ -22,27 +24,32 @@
 </script>
 
 {#snippet inner()}
-  <div class="option-info">
-    <div class="option-text">
-      <span class="option-label">{label}</span>
+  <span class="option-info">
+    <span class="option-text">
+      <span class="option-label">
+        {label}
+        {#if locked}<span class="lock-inline" aria-hidden="true"><LockIcon /></span>{/if}
+      </span>
       <span class="option-hint">{hint}</span>
-    </div>
-    <label class="toggle" class:locked>
-      <input type="checkbox" bind:checked disabled={locked} {onchange} />
-      <span class="toggle-slider"></span>
-      {#if locked}<span class="nub-lock"><LockIcon /></span>{/if}
-    </label>
-  </div>
+    </span>
+    {#if locked}
+      <span class="locked-switch" aria-hidden="true">
+        <span {...attrs(ui.switch, checked && ui.checked)}><span {...attrs(ui.thumb, checked && ui.thumbChecked)}></span></span>
+      </span>
+    {:else}
+      <Toggle {label} bind:checked {onchange} />
+    {/if}
+  </span>
 {/snippet}
 
 {#if locked}
-  <Tooltip text={LOCKED_TOOLTIP} block>
-    <button type="button" class="option-row locked" onclick={onLockedClick}>
+  <Tooltip text={LOCKED_TOOLTIP} block onclick={onLockedClick}>
+    <span class={`option-row locked ${attrs(ui.inset).class ?? ""}`} style={attrs(ui.inset).style}>
       {@render inner()}
-    </button>
+    </span>
   </Tooltip>
 {:else}
-  <div class="option-row">
+  <div class={`option-row ${attrs(ui.inset).class ?? ""}`} style={attrs(ui.inset).style}>
     {@render inner()}
   </div>
 {/if}
@@ -52,30 +59,24 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
-    padding: 12px;
-    background: var(--inset-bg);
-    border-radius: 8px;
-    transition: background 0.2s ease;
+    padding: 14px 16px;
     width: 100%;
     text-align: left;
-    border: none;
-    font: inherit;
-    color: inherit;
-  }
-
-  .option-row:hover {
-    background: var(--bg-hover);
+    transition: background 0.2s ease, transform 0.2s ease;
   }
 
   .option-row.locked {
-    cursor: default;
+    cursor: help;
+    opacity: 0.92;
   }
+
+  .locked-switch { display: flex; align-items: center; width: 44px; height: 44px; flex-shrink: 0; opacity: 0.5; pointer-events: none; }
 
   .option-info {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: space-between;
-    gap: 8px;
+    gap: 12px;
   }
 
   .option-text {
@@ -86,93 +87,25 @@
 
   .option-label {
     color: var(--text-primary);
-    font-size: 0.95em;
+    font-size: 14px;
     font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
   }
 
   .option-hint {
     color: var(--text-secondary);
-    font-size: 0.85em;
-    opacity: 0.7;
+    font-size: 13px;
   }
 
-  .toggle {
-    position: relative;
-    display: inline-block;
-    width: 44px;
-    height: 24px;
-    cursor: pointer;
-    flex-shrink: 0;
+  .lock-inline {
+    display: inline-flex;
+    opacity: 0.55;
   }
 
-  .toggle.locked {
-    cursor: default;
-  }
-
-  .toggle input {
-    opacity: 0;
-    width: 0;
-    height: 0;
-  }
-
-  .toggle-slider {
-    position: absolute;
-    cursor: pointer;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: #666;
-    transition: 0.3s;
-    border-radius: 24px;
-  }
-
-  .toggle-slider:before {
-    position: absolute;
-    content: "";
-    height: 18px;
-    width: 18px;
-    left: 3px;
-    bottom: 3px;
-    background-color: #ddd;
-    transition: 0.3s;
-    border-radius: 50%;
-  }
-
-  .toggle input:checked + .toggle-slider {
-    background-color: var(--toggle-active);
-  }
-
-  .toggle input:checked + .toggle-slider:before {
-    transform: translateX(20px);
-    background-color: #111111;
-  }
-
-  .nub-lock {
-    position: absolute;
-    left: 3px;
-    bottom: 3px;
-    width: 18px;
-    height: 18px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    pointer-events: none;
-    transition: transform 0.3s;
-  }
-
-  .toggle.locked input:checked ~ .nub-lock {
-    transform: translateX(20px);
-  }
-
-  .nub-lock :global(svg) {
-    width: 10px;
-    height: 10px;
-    color: #444;
-    stroke-width: 2.5;
-  }
-
-  .toggle.locked input:checked ~ .nub-lock :global(svg) {
-    color: #aaa;
+  .lock-inline :global(svg) {
+    width: 12px;
+    height: 12px;
   }
 </style>

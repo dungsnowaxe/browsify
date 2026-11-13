@@ -672,6 +672,7 @@ fn handle_rpc(
                     };
                     serde_json::json!({
                         "type": "testUrlResult",
+                        "requestId": msg.get("requestId"),
                         "message": {
                             "url": plan.final_url,
                             "browser": plan.browser_name,
@@ -685,6 +686,7 @@ fn handle_rpc(
                 }
                 Err(e) => serde_json::json!({
                     "type": "testUrlResult",
+                    "requestId": msg.get("requestId"),
                     "message": { "error": e }
                 })
                 .to_string(),

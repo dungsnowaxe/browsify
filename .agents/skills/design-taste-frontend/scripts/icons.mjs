@@ -52,6 +52,7 @@
   From code: import { resolveIcon, loadIndex } from './icons.mjs' gives the same resolver (the CLI only runs when this file is
   run directly).
 */
+import { createChromeProfile } from './chrome-profile.mjs';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -493,19 +494,6 @@ async function measureCmd() {
   noCrop = true;
   const { spawn, execFileSync } = await import('node:child_process');
   const idx = loadIndex();
-  // default Chrome profile folder: --profile, else $TASTE_SKILL_TMP/chrome/<tool>-<pid>, else a fresh folder under the system temp dir
-  const defaultProfile = () => process.env.TASTE_SKILL_TMP ? path.join(process.env.TASTE_SKILL_TMP, 'chrome', 'icons-' + process.pid) : path.join(os.tmpdir(), 'taste-skill-icons-' + process.pid);
-  // a profile stays in the OS temp folder or the project: a relative --profile that leads out of this folder (or the folder
-  // itself) goes to .taste-skill/chrome-<name>
-  const inProject = (p, name) => {
-    const abs = path.resolve(p), rel = path.relative(process.cwd(), abs);
-    const out = !path.isAbsolute(p) && (rel === '..' || rel.startsWith('..' + path.sep) || path.isAbsolute(rel));
-    if (rel !== '' && !out) return abs;
-    const to = path.join(process.cwd(), '.taste-skill', 'chrome-' + name);
-    console.error(`${name}: --profile ${p} ${out ? 'leads outside the project folder' : 'is the project folder itself'}; using ${to} (a profile goes in the OS temp folder or the project's .taste-skill folder)`);
-    return to;
-  };
-  const profile = opt('profile') ? inProject(opt('profile'), 'icons') : path.resolve(defaultProfile());
   const chromePath = [process.env.CHROME_PATH, 'C:/Program Files/Google/Chrome/Application/chrome.exe', 'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe', '/usr/bin/google-chrome', '/usr/bin/chromium', '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'].find(p => p && fs.existsSync(p));
   if (!chromePath) { console.error('icons: no Chrome found (set CHROME_PATH)'); process.exit(1); }
   const seen = new Set(), items = [];
@@ -517,8 +505,8 @@ async function measureCmd() {
     const vb = (r.svg.match(/viewBox="([^"]+)"/) || [])[1];
     items.push({ key: a.icon, svg: r.svg.replace(/viewBox="[^"]+"/, `viewBox="${vb}"`), vb: vb.split(/\s+/).map(Number), x, y });
   }
-  fs.rmSync(profile, { recursive: true, force: true });
-  fs.mkdirSync(profile, { recursive: true });
+  const ownedProfile = createChromeProfile(opt('profile'));
+  const profile = ownedProfile.directory;
   const child = spawn(chromePath, ['--headless=new', `--user-data-dir=${profile}`, '--remote-debugging-port=0', '--no-first-run', '--no-default-browser-check', '--disable-extensions', '--mute-audio', '--disable-gpu', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', 'about:blank'], { stdio: 'ignore' });
   const killChrome = () => { try { if (process.platform === 'win32') execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' }); else child.kill('SIGKILL'); } catch {} };
   try {
@@ -553,7 +541,7 @@ async function measureCmd() {
     idx.boxes = o;
     fs.writeFileSync(INDEX, JSON.stringify(idx, null, 1));
     console.log(`measured ${n} of ${items.length} colour marks (${hidden} skipped as implausible), written to index.json boxes`);
-  } finally { killChrome(); }
+  } finally { killChrome(); ownedProfile.cleanup(); }
 }
 
 /* ------------------------------------------------------------ scan: every icon a page names, fetched at once

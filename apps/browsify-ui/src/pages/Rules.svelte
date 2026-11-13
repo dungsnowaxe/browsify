@@ -21,7 +21,7 @@
   const SAVE_DEBOUNCE = 3000;
 
   // Local editable copies
-  let rules = $state<Rule[]>(rulesFile.rules.map((r: Rule) => ({ ...r })));
+  let rules = $state<Rule[]>([]);
 
   // Per-row "Custom..." state
   let rowIsCustom = $state<boolean[]>([]);
@@ -50,6 +50,7 @@
     const payload: RulesFile = {
       defaultBrowser: rulesFile.defaultBrowser,
       defaultProfile: rulesFile.defaultProfile,
+      options: rulesFile.options,
       rules,
     };
     window.finicky.sendMessage({ type: "saveRules", payload });
@@ -63,6 +64,7 @@
       const payload: RulesFile = {
         defaultBrowser: rulesFile.defaultBrowser,
         defaultProfile: rulesFile.defaultProfile,
+        options: rulesFile.options,
         rules,
       };
       window.finicky.sendMessage({ type: "saveRules", payload });
@@ -193,10 +195,10 @@
   });
 </script>
 
-<PageContainer title="Rules">
+<PageContainer eyebrow="Routing" title="Handler rules">
   {#snippet description()}
     {#if hasPrimaryConfig}
-      The first matching rule wins. <span style="color: var(--accent-color)">JS config is active</span> — its handlers run first and take priority over these rules.
+      The first matching rule wins. <span style="color: var(--accent-color)">Primary Config is active</span> — its handlers run first and take priority over these rules.
     {:else}
       The first matching rule wins. Use <code>*</code> as a wildcard, e.g. <code>*example.com/*</code>.
     {/if}
@@ -207,7 +209,7 @@
       No rules yet. Add one below.
     </div>
   {:else}
-    <div class="rules-list">
+    <div class="rules-list" role="list">
       {#each rules as rule, i}
           <div
             class="rule-row"
@@ -220,7 +222,7 @@
             role="listitem"
           >
             <div class="rule-top">
-              <div class="drag-handle" aria-hidden="true">⠿</div>
+              <div class="drag-handle" aria-hidden="true"><svg width="14" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="19" r="1"/></svg></div>
               <BrowserProfileSelector
                 browser={rule.browser}
                 profile={rule.profile ?? ""}
@@ -263,7 +265,9 @@
                 {#each rule.match as pattern, j}
                   <div class="pattern-row">
                     <div class="pattern-input-wrapper" class:has-warning={patternNeedsWildcard(pattern)}>
+                      <label class="pattern-label" for={`rule-${i}-pattern-${j}`}>URL pattern {j + 1}</label>
                       <input
+                        id={`rule-${i}-pattern-${j}`}
                         class="text-input pattern-input"
                         type="text"
                         placeholder="*.example.com/*"
@@ -285,7 +289,7 @@
                     {/if}
                   </div>
                 {/each}
-                <button class="add-pattern-btn" onclick={() => addPattern(i)}>+ URL</button>
+                <button class="add-pattern-btn" onclick={() => addPattern(i)}>+ Add pattern</button>
               </div>
             </div>
           </div>
@@ -298,13 +302,14 @@
 
 <style>
   .text-input {
-    padding: 8px 12px;
-    background: var(--input-bg);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
+    padding: 10px 14px;
+    background: var(--browsify-control);
+    border: 1px solid var(--browsify-border);
+    border-radius: var(--browsify-radius-control);
     color: var(--text-primary);
     font-size: 0.9em;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    box-shadow: var(--browsify-shadow-control);
   }
 
   .text-input:focus {
@@ -319,35 +324,35 @@
 
   .empty-rules {
     color: var(--text-secondary);
-    font-size: 0.9em;
-    opacity: 0.6;
-    padding: 16px 0 4px;
+    font-size: 0.95em;
+    padding: 28px 20px;
     text-align: center;
+    background: var(--browsify-panel);
+    background-image: var(--browsify-panel-gradient);
+    backdrop-filter: blur(22px) saturate(1.4);
+    border: 1px solid var(--browsify-border);
+    border-radius: var(--browsify-radius-panel);
+    box-shadow: var(--browsify-shadow);
   }
 
   .rules-list {
     display: flex;
     flex-direction: column;
-    gap: 0;
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    overflow: hidden;
+    gap: 12px;
   }
 
   .rule-row {
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    padding: 10px 12px;
-    background: var(--card-bg);
-    border-radius: 0;
-    border: none;
-    border-bottom: 1px solid var(--border-color);
-    transition: background 0.15s;
-  }
-
-  .rule-row:last-child {
-    border-bottom: none;
+    gap: 10px;
+    padding: 16px 18px;
+    background: var(--browsify-panel);
+    background-image: var(--browsify-panel-gradient);
+    backdrop-filter: blur(22px) saturate(1.4);
+    border-radius: var(--browsify-radius-panel);
+    border: 1px solid var(--browsify-border);
+    box-shadow: var(--browsify-shadow);
+    transition: background 0.15s, transform 0.15s;
   }
 
   .rule-row:hover {
@@ -426,6 +431,8 @@
     min-width: 0;
   }
 
+  .pattern-label { display: block; font-size: 13px; color: var(--text-secondary); margin-bottom: 6px; }
+
   .pattern-input-wrapper.has-warning .pattern-input {
     padding-right: 32px;
   }
@@ -433,7 +440,7 @@
   .pattern-warning-icon {
     position: absolute;
     right: 7px;
-    top: 50%;
+    top: calc(50% + 12px);
     transform: translateY(-50%);
     display: flex;
     color: var(--log-warning);
@@ -489,8 +496,9 @@
     background: none;
     border: none;
     color: var(--text-secondary);
-    font-size: 0.78em;
-    padding: 2px 4px;
+    font-size: 13px;
+    min-height: 32px;
+    padding: 4px 0;
     cursor: pointer;
     transition: color 0.15s;
   }
@@ -505,9 +513,13 @@
     color: var(--text-secondary);
     cursor: pointer;
     padding: 4px;
-    border-radius: 4px;
+    border-radius: 50%;
     flex-shrink: 0;
     display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
     margin-left: auto;
     transition: color 0.15s;
   }
@@ -518,18 +530,33 @@
 
   .add-rule-btn {
     align-self: flex-start;
-    background: transparent;
-    border: 1px solid var(--accent-color);
-    border-radius: 8px;
-    color: var(--accent-color);
-    font-size: 0.88em;
-    padding: 8px 16px;
+    background: var(--browsify-accent);
+    border: none;
+    border-radius: 999px;
+    color: var(--browsify-on-accent);
+    font-size: 0.9em;
+    font-weight: 500;
+    min-height: 44px;
+    padding: 12px 18px;
     cursor: pointer;
-    transition: background 0.15s ease, color 0.15s ease;
+    box-shadow: var(--browsify-shadow-control);
+    transition: transform 0.15s ease, opacity 0.15s ease;
   }
 
   .add-rule-btn:hover {
-    background: var(--button-hover);
-    color: var(--accent-color);
+    opacity: 0.92;
+    transform: translateY(-1px);
+  }
+
+  .add-rule-btn:active { transform: translateY(1px) scale(0.985); }
+
+  @media (max-width: 800px) {
+    .browser-required-hint { display: none; }
+    .rule-top { align-items: flex-start; }
+    .rule-row { padding: 16px; }
+    .rule-bottom { padding-left: 0; }
+    .drag-handle { display: none; }
+    .delete-btn { width: 32px; height: 44px; }
+    .pattern-warning-icon::after { white-space: normal; width: 170px; }
   }
 </style>
