@@ -11,7 +11,7 @@
   import ToastContainer from "./components/ToastContainer.svelte";
   import AppearanceMenu from "./components/AppearanceMenu.svelte";
   import type { LogEntry, UpdateInfo, ConfigInfo, RulesFile } from "./types";
-  import { testUrlResult } from "./lib/testUrlStore";
+  import { receiveUrlTestResult } from "./lib/testUrlStore";
   import { toast } from "./lib/toast";
 
   function basename(path: string): string {
@@ -60,7 +60,7 @@
         updateInfo = parsedMsg.message;
         break;
       case "testUrlResult":
-        testUrlResult.set(parsedMsg.message);
+        receiveUrlTestResult(parsedMsg.message, parsedMsg.requestId);
         break;
       case "rules":
         rulesFile = parsedMsg.message;
@@ -128,7 +128,7 @@
           .catch((err) => {
             console.error("Browsify RPC error:", err);
             if (msg.type === "testUrl") {
-              testUrlResult.set({ error: "Could not reach Browsify. Check the app is running, then try again." });
+              receiveUrlTestResult({ error: "Could not reach Browsify. Check the app is running, then try again." }, msg.requestId);
             }
           });
       }

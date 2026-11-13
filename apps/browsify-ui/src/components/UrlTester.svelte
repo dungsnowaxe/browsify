@@ -1,51 +1,25 @@
 <script lang="ts">
-  import { onDestroy } from "svelte";
   import BrowserIcon from "./BrowserIcon.svelte";
   import LinkIcon from "./icons/Link.svelte";
   import TestIcon from "./icons/Test.svelte";
   import SpinnerIcon from "./icons/Spinner.svelte";
-  import { testUrlInput, testUrlResult, testUrlSubmitted } from "../lib/testUrlStore";
+  import { testUrlInput, testUrlResult, testUrlSubmitted, testUrlLoading, testUrlError, submitUrlTest, clearUrlTest } from "../lib/testUrlStore";
   import { normalizeTestUrl } from "../utils/url";
 
   export let compact = false;
-  let loading = false;
-  let error = "";
-  let timeout: ReturnType<typeof setTimeout>;
   $: inputId = compact ? "dashboard-url" : "tester-url";
   $: result = $testUrlResult;
-  $: if (result) {
-    loading = false;
-    error = "";
-    clearTimeout(timeout);
-  }
 
   function submitTest() {
-    if (loading) return;
+    if ($testUrlLoading) return;
     const url = normalizeTestUrl($testUrlInput);
     if (!url) {
-      error = "Enter a valid URL, such as example.com.";
+      testUrlError.set("Enter a valid URL, such as example.com.");
       return;
     }
-    error = "";
-    testUrlSubmitted.set(url);
-    testUrlResult.set(null);
-    loading = true;
-    clearTimeout(timeout);
-    timeout = setTimeout(() => {
-      loading = false;
-      error = "Browsify did not respond. Check the app is running, then try again.";
-    }, 10000);
-    window.finicky.sendMessage({ type: "testUrl", url });
+    submitUrlTest(url);
   }
 
-  function clearTest() {
-    testUrlInput.set("");
-    testUrlSubmitted.set("");
-    testUrlResult.set(null);
-    error = "";
-  }
-
-  onDestroy(() => clearTimeout(timeout));
 </script>
 
 <section class="url-tester" class:compact aria-label="URL tester">
@@ -54,10 +28,10 @@
     <span class="dry-run">Dry run only</span>
   </header>
 
-  <div class="conversation" aria-live="polite" aria-busy={loading}>
+  <div class="conversation" aria-live="polite" aria-busy={$testUrlLoading}>
     {#if $testUrlSubmitted}
       <div class="url-bubble"><span>Test this link</span><p>{$testUrlSubmitted}</p></div>
-      {#if loading}
+      {#if $testUrlLoading}
         <div class="response-bubble loading"><SpinnerIcon /><span>Checking your configuration…</span></div>
       {:else if result && "error" in result}
         <div class="response-bubble failure"><strong>This URL could not be resolved</strong><p>{result.error}</p></div>
@@ -90,14 +64,14 @@
   </div>
 
   <form class="tester-form" on:submit|preventDefault={submitTest}>
-    <div class="input-heading"><label for={inputId}>URL to test</label>{#if $testUrlSubmitted && !loading}<button class="clear-test" type="button" on:click={clearTest}>Clear test</button>{/if}</div>
-    <div class="url-field" class:invalid={!!error}>
-      <input id={inputId} type="text" inputmode="url" placeholder="Paste a link…" autocapitalize="off" autocomplete="off" spellcheck="false" bind:value={$testUrlInput} aria-invalid={!!error} aria-describedby={error ? `${inputId}-error` : undefined} />
-      <button class="submit-test" type="submit" aria-label="Test URL" title="Test URL" disabled={loading}>
-        {#if loading}<SpinnerIcon />{:else}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" /></svg>{/if}
+    <div class="input-heading"><label for={inputId}>URL to test</label>{#if $testUrlSubmitted && !$testUrlLoading}<button class="clear-test" type="button" on:click={clearUrlTest}>Clear test</button>{/if}</div>
+    <div class="url-field" class:invalid={!!$testUrlError}>
+      <input id={inputId} type="text" inputmode="url" placeholder="Paste a link…" autocapitalize="off" autocomplete="off" spellcheck="false" bind:value={$testUrlInput} aria-invalid={!!$testUrlError} aria-describedby={$testUrlError ? `${inputId}-error` : undefined} />
+      <button class="submit-test" type="submit" aria-label="Test URL" title="Test URL" disabled={$testUrlLoading}>
+        {#if $testUrlLoading}<SpinnerIcon />{:else}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6" /></svg>{/if}
       </button>
     </div>
-    {#if error}<p class="input-error" id={`${inputId}-error`} role="alert">{error}</p>{/if}
+    {#if $testUrlError}<p class="input-error" id={`${inputId}-error`} role="alert">{$testUrlError}</p>{/if}
   </form>
 </section>
 
