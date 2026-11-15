@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="bg4" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0F172A"/>
+      <stop offset="60%" stop-color="#1E293B"/>
+      <stop offset="100%" stop-color="#020617"/>
+    </linearGradient>
+
+    <!-- Portal 1 (Chrome / Work) Gradient -->
+    <linearGradient id="cardGrad1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="rgba(255,255,255,0.18)"/>
+      <stop offset="100%" stop-color="rgba(255,255,255,0.03)"/>
+    </linearGradient>
+
+    <!-- Portal 2 (Firefox / Personal) Gradient -->
+    <linearGradient id="cardGrad2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="rgba(56,189,248,0.15)"/>
+      <stop offset="100%" stop-color="rgba(129,140,248,0.05)"/>
+    </linearGradient>
+
+    <!-- Transit Beam Gradient -->
+    <linearGradient id="transitBeam" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#38BDF8"/>
+      <stop offset="40%" stop-color="#818CF8"/>
+      <stop offset="80%" stop-color="#EC4899"/>
+      <stop offset="100%" stop-color="#F43F5E"/>
+    </linearGradient>
+
+    <filter id="glow4" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="10" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+
+    <filter id="cardShadow4" x="-10%" y="-10%" width="120%" height="125%">
+      <feDropShadow dx="0" dy="16" stdDeviation="20" flood-color="#000000" flood-opacity="0.5"/>
+    </filter>
+  </defs>
+
+  <!-- macOS App Squircle Background -->
+  <rect x="32" y="32" width="448" height="448" rx="100" fill="url(#bg4)" filter="url(#cardShadow4)"/>
+  <rect x="32" y="32" width="448" height="448" rx="100" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="2"/>
+
+  <!-- Browser Window Card 1: Back (Work / Chrome) -->
+  <g opacity="0.85">
+    <rect x="110" y="120" width="220" height="170" rx="20" fill="url(#cardGrad1)" stroke="rgba(255,255,255,0.2)" stroke-width="2"/>
+    <!-- Window Header Line -->
+    <line x1="110" y1="155" x2="330" y2="155" stroke="rgba(255,255,255,0.15)" stroke-width="1.5"/>
+    <!-- macOS Window Dots -->
+    <circle cx="132" cy="138" r="4.5" fill="#EF4444" opacity="0.8"/>
+    <circle cx="146" cy="138" r="4.5" fill="#F59E0B" opacity="0.8"/>
+    <circle cx="160" cy="138" r="4.5" fill="#10B981" opacity="0.8"/>
+    <!-- Address Bar Pill -->
+    <rect x="180" y="131" width="130" height="14" rx="7" fill="rgba(255,255,255,0.08)"/>
+  </g>
+
+  <!-- Browser Window Card 2: Front (Personal / Arc / Firefox) -->
+  <g>
+    <rect x="182" y="212" width="220" height="175" rx="20" fill="url(#cardGrad2)" stroke="#38BDF8" stroke-width="2.5" opacity="0.95"/>
+    <!-- Window Header Line -->
+    <line x1="182" y1="247" x2="402" y2="247" stroke="rgba(56,189,248,0.25)" stroke-width="1.5"/>
+    <!-- Window Dots -->
+    <circle cx="204" cy="230" r="4.5" fill="#EF4444"/>
+    <circle cx="218" cy="230" r="4.5" fill="#F59E0B"/>
+    <circle cx="232" cy="230" r="4.5" fill="#10B981"/>
+    <!-- Address Bar Pill -->
+    <rect x="252" y="223" width="130" height="14" rx="7" fill="rgba(56,189,248,0.15)"/>
+  </g>
+
+  <!-- Dynamic URL Routing Beam Arcing Across Both Windows (forming 'B' contour) -->
+  <g filter="url(#glow4)">
+    <!-- Route Sweep Track -->
+    <path d="M 120 410 C 130 310, 160 210, 220 180 C 290 145, 360 170, 320 250 C 290 310, 390 320, 370 395" 
+          fill="none" stroke="url(#transitBeam)" stroke-width="24" stroke-linecap="round"/>
+
+    <!-- Fast Routing Arrow -->
+    <polygon points="352,408 385,415 385,380" fill="#F43F5E"/>
+
+    <!-- Origin and Waypoint Nodes -->
+    <circle cx="120" cy="410" r="12" fill="#38BDF8" stroke="#FFFFFF" stroke-width="3"/>
+    <circle cx="270" cy="216" r="10" fill="#FFFFFF"/>
+    <circle cx="320" cy="250" r="10" fill="#EC4899"/>
+  </g>
+</svg>

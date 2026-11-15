@@ -1,0 +1,168 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 560" width="100%" height="100%">
+  <defs>
+    <!-- Card Background Gradient -->
+    <linearGradient id="bannerBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#090D16"/>
+      <stop offset="40%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#020617"/>
+    </linearGradient>
+
+    <!-- Badge / Accent Gradients -->
+    <linearGradient id="badgeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38BDF8"/>
+      <stop offset="100%" stop-color="#818CF8"/>
+    </linearGradient>
+
+    <linearGradient id="opt1Grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF5370"/>
+      <stop offset="100%" stop-color="#00F2FE"/>
+    </linearGradient>
+
+    <linearGradient id="opt3Grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF4500"/>
+      <stop offset="100%" stop-color="#FFD700"/>
+    </linearGradient>
+
+    <!-- Glow Filter -->
+    <filter id="softGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+
+    <filter id="iconDrop" x="-10%" y="-10%" width="120%" height="125%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000000" flood-opacity="0.6"/>
+    </filter>
+  </defs>
+
+  <style>
+    .title { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif; font-weight: 800; font-size: 32px; fill: #F8FAFC; letter-spacing: -0.5px; }
+    .subtitle { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif; font-weight: 400; font-size: 15px; fill: #94A3B8; }
+    .opt-title { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif; font-weight: 700; font-size: 15px; fill: #F1F5F9; text-anchor: middle; }
+    .opt-desc { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif; font-weight: 400; font-size: 12px; fill: #64748B; text-anchor: middle; }
+    .badge-text { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif; font-weight: 600; font-size: 11px; fill: #0F172A; text-anchor: middle; }
+    .tag { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif; font-weight: 600; font-size: 11px; fill: #38BDF8; letter-spacing: 1px; text-transform: uppercase; }
+  </style>
+
+  <!-- Canvas Backdrop with Rounded Border -->
+  <rect x="0" y="0" width="1200" height="560" rx="24" fill="url(#bannerBg)"/>
+  <rect x="1" y="1" width="1198" height="558" rx="23" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="2"/>
+
+  <!-- Subtle Ambient Glows -->
+  <circle cx="200" cy="80" r="140" fill="#38BDF8" opacity="0.08" filter="url(#softGlow)"/>
+  <circle cx="1000" cy="120" r="160" fill="#818CF8" opacity="0.07" filter="url(#softGlow)"/>
+
+  <!-- Header Section -->
+  <g transform="translate(60, 48)">
+    <text x="0" y="20" class="tag">Brand Identity Rebranding</text>
+    <text x="0" y="60" class="title">Browsify · Logo Concepts</text>
+    <text x="0" y="90" class="subtitle">Ultra-lean URL routing &amp; browser profile launcher for macOS · ~5 MB RAM · 2.3 µs latency</text>
+  </g>
+
+  <!-- ==================== 5 OPTIONS GRID ==================== -->
+  
+  <!-- OPTION 1: Dynamic Prism -->
+  <g transform="translate(60, 180)">
+    <!-- Highlight Card for Flagship / Recommended Option -->
+    <rect x="-10" y="-12" width="220" height="310" rx="20" fill="rgba(56, 189, 248, 0.05)" stroke="rgba(56, 189, 248, 0.3)" stroke-width="1.5"/>
+    <rect x="45" y="-24" width="110" height="22" rx="11" fill="url(#badgeGrad)"/>
+    <text x="100" y="-9" class="badge-text">RECOMMENDED</text>
+
+    <!-- Mini Icon Render (140x140) -->
+    <g transform="translate(30, 16) scale(0.3125)" filter="url(#iconDrop)">
+      <rect x="32" y="32" width="448" height="448" rx="100" fill="#1E1B4B" stroke="rgba(255,255,255,0.2)" stroke-width="4"/>
+      <path d="M 170 376 L 170 136" fill="none" stroke="#38BDF8" stroke-width="38" stroke-linecap="round"/>
+      <path d="M 170 146 C 245 146, 330 154, 330 220 C 330 270, 260 276, 170 276" fill="none" stroke="#FF5370" stroke-width="32" stroke-linecap="round"/>
+      <path d="M 170 276 C 265 276, 350 282, 350 354 C 350 416, 250 416, 170 416" fill="none" stroke="#00F2FE" stroke-width="32" stroke-linecap="round"/>
+      <circle cx="170" cy="146" r="16" fill="#FFFFFF"/>
+      <circle cx="170" cy="276" r="20" fill="#FFFFFF"/>
+      <circle cx="170" cy="416" r="16" fill="#FFFFFF"/>
+      <circle cx="170" cy="276" r="10" fill="#38BDF8"/>
+    </g>
+
+    <text x="100" y="200" class="opt-title">1. Dynamic Prism</text>
+    <text x="100" y="224" class="opt-desc">Multi-track 'B' split</text>
+    <text x="100" y="242" class="opt-desc">Personal &amp; Work routes</text>
+    <text x="100" y="260" class="opt-desc" fill="#38BDF8" font-weight="600">Precision · Modern</text>
+  </g>
+
+  <!-- OPTION 2: Compass Router -->
+  <g transform="translate(290, 180)">
+    <rect x="-10" y="-12" width="200" height="310" rx="20" fill="rgba(255, 255, 255, 0.02)" stroke="rgba(255, 255, 255, 0.08)" stroke-width="1"/>
+    
+    <g transform="translate(20, 16) scale(0.3125)" filter="url(#iconDrop)">
+      <rect x="32" y="32" width="448" height="448" rx="100" fill="#0B132B" stroke="rgba(255,255,255,0.2)" stroke-width="4"/>
+      <circle cx="256" cy="256" r="150" fill="none" stroke="#38BDF8" stroke-width="4" stroke-dasharray="12 16" opacity="0.4"/>
+      <path d="M 120 392 Q 190 320, 256 256" fill="none" stroke="#10B981" stroke-width="32" stroke-linecap="round"/>
+      <path d="M 256 256 Q 320 190, 386 126" fill="none" stroke="#3B82F6" stroke-width="32" stroke-linecap="round"/>
+      <polygon points="350,110 398,114 394,162" fill="#3B82F6"/>
+      <path d="M 256 256 Q 320 280, 386 350" fill="none" stroke="#EC4899" stroke-width="26" stroke-linecap="round"/>
+      <polygon points="350,364 394,362 390,318" fill="#EC4899"/>
+      <circle cx="256" cy="256" r="34" fill="#0B132B" stroke="#00F2FE" stroke-width="8"/>
+      <circle cx="256" cy="256" r="16" fill="#FFFFFF"/>
+    </g>
+
+    <text x="90" y="200" class="opt-title">2. Compass Router</text>
+    <text x="90" y="224" class="opt-desc">Wayfinding dial cross</text>
+    <text x="90" y="242" class="opt-desc">4-quadrant link dispatch</text>
+    <text x="90" y="260" class="opt-desc" fill="#94A3B8">Navigational · Certain</text>
+  </g>
+
+  <!-- OPTION 3: Speed Flow -->
+  <g transform="translate(510, 180)">
+    <rect x="-10" y="-12" width="200" height="310" rx="20" fill="rgba(255, 255, 255, 0.02)" stroke="rgba(255, 255, 255, 0.08)" stroke-width="1"/>
+
+    <g transform="translate(20, 16) scale(0.3125)" filter="url(#iconDrop)">
+      <rect x="32" y="32" width="448" height="448" rx="100" fill="#18181B" stroke="rgba(255,255,255,0.2)" stroke-width="4"/>
+      <path d="M 160 380 L 160 132 C 160 132, 230 132, 290 132 C 345 132, 375 160, 375 204 C 375 244, 340 264, 280 264 L 160 264" fill="none" stroke="#FF4500" stroke-width="36" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M 160 264 L 290 264 C 360 264, 395 292, 395 340 C 395 384, 350 408, 285 408 L 160 408" fill="none" stroke="#FF8C00" stroke-width="36" stroke-linecap="round" stroke-linejoin="round"/>
+      <polygon points="280,250 310,264 280,278" fill="#FFFFFF"/>
+      <polygon points="280,394 310,408 280,422" fill="#FFFFFF"/>
+      <circle cx="160" cy="264" r="18" fill="#FFFFFF"/>
+      <circle cx="160" cy="264" r="9" fill="#FF8C00"/>
+    </g>
+
+    <text x="90" y="200" class="opt-title">3. Speed Flow</text>
+    <text x="90" y="224" class="opt-desc">Sub-microsecond 'B'</text>
+    <text x="90" y="242" class="opt-desc">Rust engine velocity</text>
+    <text x="90" y="260" class="opt-desc" fill="#F97316">2.3 µs · Performance</text>
+  </g>
+
+  <!-- OPTION 4: Browser Portals -->
+  <g transform="translate(730, 180)">
+    <rect x="-10" y="-12" width="200" height="310" rx="20" fill="rgba(255, 255, 255, 0.02)" stroke="rgba(255, 255, 255, 0.08)" stroke-width="1"/>
+
+    <g transform="translate(20, 16) scale(0.3125)" filter="url(#iconDrop)">
+      <rect x="32" y="32" width="448" height="448" rx="100" fill="#0F172A" stroke="rgba(255,255,255,0.2)" stroke-width="4"/>
+      <rect x="110" y="120" width="210" height="160" rx="16" fill="rgba(255,255,255,0.12)" stroke="rgba(255,255,255,0.25)" stroke-width="3"/>
+      <rect x="180" y="210" width="210" height="165" rx="16" fill="rgba(56,189,248,0.15)" stroke="#38BDF8" stroke-width="3"/>
+      <path d="M 120 400 C 130 300, 160 210, 220 180 C 290 145, 360 170, 320 250 C 290 310, 390 320, 370 395" fill="none" stroke="#F43F5E" stroke-width="26" stroke-linecap="round"/>
+      <polygon points="352,408 385,415 385,380" fill="#F43F5E"/>
+    </g>
+
+    <text x="90" y="200" class="opt-title">4. Browser Portals</text>
+    <text x="90" y="224" class="opt-desc">Overlapping viewports</text>
+    <text x="90" y="242" class="opt-desc">macOS frosted glass</text>
+    <text x="90" y="260" class="opt-desc" fill="#94A3B8">Seamless Multitasking</text>
+  </g>
+
+  <!-- OPTION 5: Synaptic Junction -->
+  <g transform="translate(950, 180)">
+    <rect x="-10" y="-12" width="200" height="310" rx="20" fill="rgba(255, 255, 255, 0.02)" stroke="rgba(255, 255, 255, 0.08)" stroke-width="1"/>
+
+    <g transform="translate(20, 16) scale(0.3125)" filter="url(#iconDrop)">
+      <rect x="32" y="32" width="448" height="448" rx="100" fill="#090A0F" stroke="rgba(255,255,255,0.2)" stroke-width="4"/>
+      <line x1="256" y1="420" x2="256" y2="280" stroke="#38BDF8" stroke-width="28" stroke-linecap="round"/>
+      <path d="M 256 280 C 256 210, 384 210, 384 130" fill="none" stroke="#A855F7" stroke-width="24" stroke-linecap="round"/>
+      <path d="M 256 280 C 256 210, 128 210, 128 130" fill="none" stroke="#34D399" stroke-width="24" stroke-linecap="round"/>
+      <polygon points="256,244 286,280 256,316 226,280" fill="#0E1726" stroke="#38BDF8" stroke-width="6"/>
+      <circle cx="128" cy="130" r="24" fill="#064E3B" stroke="#34D399" stroke-width="6"/>
+      <circle cx="384" cy="130" r="24" fill="#312E81" stroke="#A855F7" stroke-width="6"/>
+      <circle cx="256" cy="280" r="10" fill="#FFFFFF"/>
+    </g>
+
+    <text x="90" y="200" class="opt-title">5. Synaptic Junction</text>
+    <text x="90" y="224" class="opt-desc">Deterministic rule fork</text>
+    <text x="90" y="242" class="opt-desc">Pure architectural clarity</text>
+    <text x="90" y="260" class="opt-desc" fill="#34D399">Lean ~5MB · Minimalist</text>
+  </g>
+</svg>

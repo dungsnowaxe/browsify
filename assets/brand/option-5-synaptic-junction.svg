@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- Background Gradient: Deep Void Black / Charcoal -->
+    <linearGradient id="bg5" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#090A0F"/>
+      <stop offset="50%" stop-color="#121824"/>
+      <stop offset="100%" stop-color="#05070A"/>
+    </linearGradient>
+
+    <!-- Emerald Path (Personal) -->
+    <linearGradient id="pathEmerald" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#10B981"/>
+      <stop offset="100%" stop-color="#34D399"/>
+    </linearGradient>
+
+    <!-- Electric Indigo Path (Work) -->
+    <linearGradient id="pathIndigo" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#6366F1"/>
+      <stop offset="100%" stop-color="#A855F7"/>
+    </linearGradient>
+
+    <!-- Amber / Fallback Path -->
+    <linearGradient id="pathAmber" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#F59E0B"/>
+      <stop offset="100%" stop-color="#FCD34D"/>
+    </linearGradient>
+
+    <!-- Input Bus Gradient -->
+    <linearGradient id="pathInput" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#38BDF8"/>
+      <stop offset="100%" stop-color="#6366F1"/>
+    </linearGradient>
+
+    <filter id="glow5" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+
+    <filter id="cardShadow5" x="-10%" y="-10%" width="120%" height="125%">
+      <feDropShadow dx="0" dy="16" stdDeviation="20" flood-color="#000000" flood-opacity="0.5"/>
+    </filter>
+  </defs>
+
+  <!-- macOS App Squircle Background -->
+  <rect x="32" y="32" width="448" height="448" rx="100" fill="url(#bg5)" filter="url(#cardShadow5)"/>
+  <rect x="32" y="32" width="448" height="448" rx="100" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="2"/>
+
+  <!-- Circuit / Coordinate Grid Lattice -->
+  <g opacity="0.08" stroke="#FFFFFF" stroke-width="1.5">
+    <line x1="96" y1="96" x2="416" y2="96"/>
+    <line x1="96" y1="200" x2="416" y2="200"/>
+    <line x1="96" y1="312" x2="416" y2="312"/>
+    <line x1="128" y1="64" x2="128" y2="448"/>
+    <line x1="256" y1="64" x2="256" y2="448"/>
+    <line x1="384" y1="64" x2="384" y2="448"/>
+  </g>
+
+  <g filter="url(#glow5)">
+    <!-- Main Incoming Channel (Bottom Center) -->
+    <line x1="256" y1="420" x2="256" y2="280" stroke="url(#pathInput)" stroke-width="24" stroke-linecap="round"/>
+
+    <!-- Fork Track 1: Work Profile (Right Branch) -->
+    <path d="M 256 280 C 256 210, 384 210, 384 130" fill="none" stroke="url(#pathIndigo)" stroke-width="20" stroke-linecap="round"/>
+
+    <!-- Fork Track 2: Personal Profile (Left Branch) -->
+    <path d="M 256 280 C 256 210, 128 210, 128 130" fill="none" stroke="url(#pathEmerald)" stroke-width="20" stroke-linecap="round"/>
+
+    <!-- Fork Track 3: Direct Pass-Through (Straight Up) -->
+    <line x1="256" y1="280" x2="256" y2="120" stroke="url(#pathAmber)" stroke-width="16" stroke-linecap="round" stroke-dasharray="8 8"/>
+
+    <!-- Central Diamond Routing Prism Engine -->
+    <polygon points="256,244 286,280 256,316 226,280" fill="#0E1726" stroke="#38BDF8" stroke-width="5"/>
+    <circle cx="256" cy="280" r="8" fill="#FFFFFF"/>
+
+    <!-- Destination Profile Nodes (Badges) -->
+    <!-- Left: Personal (Emerald) -->
+    <circle cx="128" cy="130" r="22" fill="#064E3B" stroke="#34D399" stroke-width="4"/>
+    <circle cx="128" cy="130" r="10" fill="#34D399"/>
+
+    <!-- Middle: Default (Amber) -->
+    <circle cx="256" cy="120" r="18" fill="#78350F" stroke="#FCD34D" stroke-width="3"/>
+    <circle cx="256" cy="120" r="7" fill="#FCD34D"/>
+
+    <!-- Right: Work (Indigo/Violet) -->
+    <circle cx="384" cy="130" r="22" fill="#312E81" stroke="#A855F7" stroke-width="4"/>
+    <circle cx="384" cy="130" r="10" fill="#C084FC"/>
+
+    <!-- Incoming Stream Origin Node -->
+    <circle cx="256" cy="420" r="14" fill="#38BDF8" stroke="#FFFFFF" stroke-width="3"/>
+  </g>
+</svg>

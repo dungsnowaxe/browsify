@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Browsify Rebranding · Logo Exploration</title>
+  <style>
+    :root {
+      --bg: #090D16;
+      --card-bg: rgba(255, 255, 255, 0.03);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --text: #F8FAFC;
+      --text-muted: #94A3B8;
+      --accent: #38BDF8;
+      --font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", system-ui, sans-serif;
+    }
+
+    [data-theme="light"] {
+      --bg: #F8FAFC;
+      --card-bg: #FFFFFF;
+      --card-border: rgba(0, 0, 0, 0.08);
+      --text: #0F172A;
+      --text-muted: #64748B;
+      --accent: #0284C7;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      padding: 40px 24px 80px;
+      line-height: 1.5;
+      transition: background 0.25s ease, color 0.25s ease;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    header {
+      margin-bottom: 40px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      flex-wrap: wrap;
+      gap: 20px;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 24px;
+    }
+
+    .eyebrow {
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: var(--accent);
+      margin-bottom: 6px;
+    }
+
+    h1 {
+      font-size: 36px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+    }
+
+    .lead {
+      color: var(--text-muted);
+      font-size: 16px;
+      max-width: 650px;
+      margin-top: 6px;
+    }
+
+    .theme-toggle {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      color: var(--text);
+      padding: 8px 16px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s ease;
+    }
+    .theme-toggle:hover {
+      border-color: var(--accent);
+    }
+
+    .banner-preview {
+      margin-bottom: 48px;
+      border-radius: 20px;
+      overflow: hidden;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+      border: 1px solid var(--card-border);
+    }
+    .banner-preview img {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 28px;
+      margin-bottom: 48px;
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 20px;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+    }
+    .card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 16px 32px rgba(0, 0, 0, 0.2);
+      border-color: rgba(56, 189, 248, 0.4);
+    }
+
+    .card.featured {
+      border-color: rgba(56, 189, 248, 0.5);
+      background: linear-gradient(180deg, rgba(56, 189, 248, 0.05) 0%, var(--card-bg) 100%);
+    }
+
+    .card-badge {
+      position: absolute;
+      top: -12px;
+      right: 20px;
+      background: linear-gradient(135deg, #38BDF8, #818CF8);
+      color: #0F172A;
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 4px 12px;
+      border-radius: 999px;
+    }
+
+    .icon-preview-wrap {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 32px 16px;
+      background: rgba(0, 0, 0, 0.15);
+      border-radius: 14px;
+      margin-bottom: 20px;
+    }
+
+    .icon-img {
+      width: 160px;
+      height: 160px;
+      filter: drop-shadow(0 12px 24px rgba(0, 0, 0, 0.35));
+    }
+
+    .card-title {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    .card-concept {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--accent);
+      margin-bottom: 12px;
+    }
+
+    .card-desc {
+      font-size: 14px;
+      color: var(--text-muted);
+      margin-bottom: 16px;
+      flex-grow: 1;
+    }
+
+    .scales-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding-top: 16px;
+      border-top: 1px solid var(--card-border);
+    }
+    .scale-label {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .scale-icons {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .scale-64 { width: 36px; height: 36px; }
+    .scale-32 { width: 22px; height: 22px; }
+    .scale-16 { width: 16px; height: 16px; }
+
+    .tokens-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 24px;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      overflow: hidden;
+    }
+    .tokens-table th, .tokens-table td {
+      padding: 14px 18px;
+      text-align: left;
+      font-size: 14px;
+      border-bottom: 1px solid var(--card-border);
+    }
+    .tokens-table th {
+      background: rgba(255, 255, 255, 0.02);
+      color: var(--text-muted);
+      font-weight: 600;
+      text-transform: uppercase;
+      font-size: 12px;
+      letter-spacing: 0.5px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div>
+        <div class="eyebrow">Brand Identity · Rebranding to Browsify</div>
+        <h1>Browsify Logo Concepts</h1>
+        <p class="lead">Exploring 5 design directions for Browsify: ultra-lean URL routing, multi-profile launching, sub-5µs speed, and macOS native elegance.</p>
+      </div>
+      <button class="theme-toggle" onclick="toggleTheme()">🌗 Toggle Theme</button>
+    </header>
+
+    <div class="banner-preview">
+      <img src="browsify-showcase.svg" alt="Browsify Logo Showcase">
+    </div>
+
+    <div class="grid">
+      <!-- OPTION 1 -->
+      <div class="card featured">
+        <div class="card-badge">Flagship Recommendation</div>
+        <div class="icon-preview-wrap">
+          <img class="icon-img" src="option-1-dynamic-prism.svg" alt="Dynamic Prism">
+        </div>
+        <h2 class="card-title">1. Dynamic Prism</h2>
+        <div class="card-concept">Multi-Track 'B' Optical Switch</div>
+        <p class="card-desc">A stylized monogram 'B' where the vertical stem represents incoming URLs, branching cleanly into two luminous loops: Sunset Coral (Work / Chromium) and Electric Cyan (Personal / Firefox). Delivers Apple-grade macOS aesthetic and clear routing semantics.</p>
+        <div class="scales-row">
+          <span class="scale-label">Dock &amp; Menu:</span>
+          <div class="scale-icons">
+            <img class="scale-64" src="option-1-dynamic-prism.svg" alt="64px">
+            <img class="scale-32" src="option-1-dynamic-prism.svg" alt="32px">
+            <img class="scale-16" src="option-1-dynamic-prism.svg" alt="16px">
+          </div>
+        </div>
+      </div>
+
+      <!-- OPTION 2 -->
+      <div class="card">
+        <div class="icon-preview-wrap">
+          <img class="icon-img" src="option-2-compass-router.svg" alt="Compass Router">
+        </div>
+        <h2 class="card-title">2. Compass Router</h2>
+        <div class="card-concept">Precision Wayfinding &amp; 4-Quadrant Dispatch</div>
+        <p class="card-desc">An outer radar dial framing a curved compass cross with glowing trajectory nodes. Emphasizes navigational certainty—guaranteeing that every link always lands in the exact intended browser context.</p>
+        <div class="scales-row">
+          <span class="scale-label">Dock &amp; Menu:</span>
+          <div class="scale-icons">
+            <img class="scale-64" src="option-2-compass-router.svg" alt="64px">
+            <img class="scale-32" src="option-2-compass-router.svg" alt="32px">
+            <img class="scale-16" src="option-2-compass-router.svg" alt="16px">
+          </div>
+        </div>
+      </div>
+
+      <!-- OPTION 3 -->
+      <div class="card">
+        <div class="icon-preview-wrap">
+          <img class="icon-img" src="option-3-speed-flow.svg" alt="Speed Flow">
+        </div>
+        <h2 class="card-title">3. Speed Flow</h2>
+        <div class="card-concept">Rust Velocity &amp; Sub-Microsecond 'B'</div>
+        <p class="card-desc">High-speed aerodynamic vector ribbons looping into a bold 'B' with forward arrowheads. Highlights Browsify's core technical achievement: 2.3 µs routing latency and native Rust engine performance.</p>
+        <div class="scales-row">
+          <span class="scale-label">Dock &amp; Menu:</span>
+          <div class="scale-icons">
+            <img class="scale-64" src="option-3-speed-flow.svg" alt="64px">
+            <img class="scale-32" src="option-3-speed-flow.svg" alt="32px">
+            <img class="scale-16" src="option-3-speed-flow.svg" alt="16px">
+          </div>
+        </div>
+      </div>
+
+      <!-- OPTION 4 -->
+      <div class="card">
+        <div class="icon-preview-wrap">
+          <img class="icon-img" src="option-4-browser-portals.svg" alt="Browser Portals">
+        </div>
+        <h2 class="card-title">4. Browser Portals</h2>
+        <div class="card-concept">Overlapping Viewports &amp; macOS Frosted Glass</div>
+        <p class="card-desc">Two layered translucent browser window silhouettes intersected by an upward URL trajectory beam. Communicates multi-browser orchestration and seamless desktop multitasking.</p>
+        <div class="scales-row">
+          <span class="scale-label">Dock &amp; Menu:</span>
+          <div class="scale-icons">
+            <img class="scale-64" src="option-4-browser-portals.svg" alt="64px">
+            <img class="scale-32" src="option-4-browser-portals.svg" alt="32px">
+            <img class="scale-16" src="option-4-browser-portals.svg" alt="16px">
+          </div>
+        </div>
+      </div>
+
+      <!-- OPTION 5 -->
+      <div class="card">
+        <div class="icon-preview-wrap">
+          <img class="icon-img" src="option-5-synaptic-junction.svg" alt="Synaptic Junction">
+        </div>
+        <h2 class="card-title">5. Synaptic Junction</h2>
+        <div class="card-concept">Deterministic Network Switch &amp; Lean ~5MB Memory</div>
+        <p class="card-desc">Minimalist geometric fork with a diamond routing crystal and distinct circular endpoint nodes (Personal, Work, Default). Inspired by the UNIX philosophy and declarative routing architecture.</p>
+        <div class="scales-row">
+          <span class="scale-label">Dock &amp; Menu:</span>
+          <div class="scale-icons">
+            <img class="scale-64" src="option-5-synaptic-junction.svg" alt="64px">
+            <img class="scale-32" src="option-5-synaptic-junction.svg" alt="32px">
+            <img class="scale-16" src="option-5-synaptic-junction.svg" alt="16px">
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function toggleTheme() {
+      const current = document.documentElement.getAttribute('data-theme');
+      document.documentElement.setAttribute('data-theme', current === 'light' ? 'dark' : 'light');
+    }
+  </script>
+</body>
+</html>
