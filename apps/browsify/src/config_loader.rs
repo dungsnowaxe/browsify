@@ -265,12 +265,16 @@ impl BrowsifyEngine {
         &self.summary
     }
 
+    /// The UI Rules File used by routing, the file watcher, and the visual editor.
+    pub fn rules_path(&self) -> PathBuf {
+        self.custom_rules_path
+            .clone()
+            .unwrap_or_else(|| RulesFile::default_path(&self.home_dir))
+    }
+
     /// Checks if either the Primary Config or `rules.json` has changed on disk since last load.
     pub fn check_files_changed(&self) -> bool {
-        let rules_path = self
-            .custom_rules_path
-            .clone()
-            .unwrap_or_else(|| RulesFile::default_path(&self.home_dir));
+        let rules_path = self.rules_path();
         if file_mtime(&rules_path) != self.rules_mtime {
             return true;
         }
@@ -327,9 +331,7 @@ impl BrowsifyEngine {
             url.to_string()
         };
         match &self.backend {
-            EngineBackend::Native(router) => {
-                router.resolve(&input_url, opener, open_in_background)
-            }
+            EngineBackend::Native(router) => router.resolve(&input_url, opener, open_in_background),
             EngineBackend::Js(engine) => engine.resolve(&input_url, opener, open_in_background),
         }
     }
@@ -378,7 +380,11 @@ fn collect_router_profiles(router: &NativeRouter) -> Vec<(String, String)> {
             router.default_browser.profile.clone(),
         ));
     }
-    for h in router.handlers.iter().chain(router.fallback_handlers.iter()) {
+    for h in router
+        .handlers
+        .iter()
+        .chain(router.fallback_handlers.iter())
+    {
         if !h.target.name.is_empty() && !h.target.profile.is_empty() {
             let pair = (h.target.name.clone(), h.target.profile.clone());
             if !out.contains(&pair) {

@@ -14,6 +14,9 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 const MAX_LOG_BUFFER: usize = 200;
 const MAX_RECENT_URLS: usize = 10;
 const IDLE_SHUTDOWN_GRACE: Duration = Duration::from_secs(30);
+const MAX_HTTP_HEADERS: usize = 16 * 1024;
+const MAX_HTTP_BODY: usize = 1024 * 1024;
+const HTTP_READ_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Severity of a UI log entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -141,9 +144,7 @@ pub fn log_event(level: LogLevel, msg: impl Into<String>) {
     };
     let sse_payload = sse_event(
         "log",
-        serde_json::to_string(&entry)
-            .unwrap_or_default()
-            .into(),
+        serde_json::to_string(&entry).unwrap_or_default().into(),
     );
 
     if let Ok(mut guard) = telemetry().lock() {
@@ -300,7 +301,7 @@ pub fn run_ui_server(
         });
     }
 
-    let dist_dir = resolve_ui_dist_dir();
+    let dist_dir = resolve_ui_dist_dir().and_then(|dir| fs::canonicalize(dir).ok());
 
     for stream in listener.incoming() {
         if stop_flag.load(Ordering::Relaxed) {
@@ -309,20 +310,24 @@ pub fn run_ui_server(
         let Ok(mut stream) = stream else {
             continue;
         };
-        let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
-        let mut buf = [0u8; 65536];
-        let Ok(n) = stream.read(&mut buf) else {
-            continue;
+        let _ = stream.set_write_timeout(Some(HTTP_READ_TIMEOUT));
+        let (req, body) = match read_http_request(&mut stream) {
+            Ok(request) => request,
+            Err(status) => {
+                let _ = write_http_response(
+                    &mut stream,
+                    status,
+                    "application/json; charset=utf-8",
+                    br#"{"error":"Invalid or incomplete HTTP request"}"#,
+                );
+                continue;
+            }
         };
-        if n == 0 {
-            continue;
-        }
 
         if let Ok(mut t) = last_activity.lock() {
             *t = Instant::now();
         }
 
-        let req = String::from_utf8_lossy(&buf[..n]);
         let mut lines = req.lines();
         let Some(first_line) = lines.next() else {
             continue;
@@ -359,12 +364,7 @@ pub fn run_ui_server(
         }
 
         if method == "POST" && path == "/api/rpc" {
-            let body = req
-                .split("\r\n\r\n")
-                .nth(1)
-                .or_else(|| req.split("\n\n").nth(1))
-                .unwrap_or("");
-            let response_json = handle_rpc(body, &engine, &profile_resolver);
+            let response_json = handle_rpc(&body, &engine, &profile_resolver);
             let _ = write_http_response(
                 &mut stream,
                 "200 OK",
@@ -375,38 +375,56 @@ pub fn run_ui_server(
         }
 
         let clean_path = path.trim_start_matches('/');
-        if let Some(ref dir) = dist_dir {
-            let is_spa_route = clean_path.is_empty() || !clean_path.contains('.');
-            let target = if is_spa_route {
-                dir.join("index.html")
-            } else {
-                dir.join(clean_path)
-            };
-            if let Ok(bytes) = fs::read(&target) {
-                if is_spa_route {
-                    let html = String::from_utf8_lossy(&bytes);
-                    let injected = inject_session_token(&html, &session_token);
-                    let _ = write_http_response(
-                        &mut stream,
-                        "200 OK",
-                        "text/html; charset=utf-8",
-                        injected.as_bytes(),
-                    );
-                } else {
-                    let mime = guess_mime(&target);
-                    let _ = write_http_response(&mut stream, "200 OK", mime, &bytes);
-                }
-                continue;
-            }
+        // Reject traversal before SPA routing; canonical containment below also
+        // prevents symlinks inside the asset directory from exposing local files.
+        if method != "GET"
+            || !path.starts_with('/')
+            || Path::new(clean_path)
+                .components()
+                .any(|c| !matches!(c, std::path::Component::Normal(_)))
+        {
+            let _ = write_http_response(&mut stream, "404 Not Found", "text/plain", b"Not found");
+            continue;
         }
-
-        let fallback_html = inject_session_token(FALLBACK_SPA_HTML, &session_token);
-        let _ = write_http_response(
-            &mut stream,
-            "200 OK",
-            "text/html; charset=utf-8",
-            fallback_html.as_bytes(),
-        );
+        let is_document =
+            clean_path.is_empty() || clean_path == "index.html" || !clean_path.contains('.');
+        // Assets may be fetched without a token, but never hand out the token
+        // itself to an unauthenticated document request.
+        if is_document && !validate_loopback_and_token(&req, query, &session_token) {
+            let _ = write_http_response(&mut stream, "403 Forbidden", "text/plain", b"Forbidden");
+            continue;
+        }
+        if let Some(ref dir) = dist_dir {
+            let target = dir.join(if is_document {
+                "index.html"
+            } else {
+                clean_path
+            });
+            if let Ok(target) = fs::canonicalize(target) {
+                if target.starts_with(dir) && target.is_file() {
+                    if let Ok(bytes) = fs::read(&target) {
+                        if is_document {
+                            let html = String::from_utf8_lossy(&bytes);
+                            let injected = inject_session_token(&html, &session_token);
+                            let _ = write_document_response(&mut stream, &injected, &session_token);
+                        } else {
+                            let _ = write_http_response(
+                                &mut stream,
+                                "200 OK",
+                                guess_mime(&target),
+                                &bytes,
+                            );
+                        }
+                        continue;
+                    }
+                }
+            }
+        } else if is_document {
+            let fallback_html = inject_session_token(FALLBACK_SPA_HTML, &session_token);
+            let _ = write_document_response(&mut stream, &fallback_html, &session_token);
+            continue;
+        }
+        let _ = write_http_response(&mut stream, "404 Not Found", "text/plain", b"Not found");
     }
 
     if let Ok(mut guard) = telemetry().lock() {
@@ -417,8 +435,93 @@ pub fn run_ui_server(
     Ok(())
 }
 
+/// Read a complete, bounded HTTP/1 request. TCP reads need not align with
+/// headers, the body, or UTF-8 characters. This server closes after one request
+/// and deliberately rejects transfer encodings and ambiguous framing.
+fn read_http_request(stream: &mut TcpStream) -> Result<(String, String), &'static str> {
+    let started = Instant::now();
+    let mut bytes = Vec::new();
+    let mut buf = [0u8; 8192];
+    let header_end = loop {
+        if let Some(end) = bytes.windows(4).position(|w| w == b"\r\n\r\n") {
+            if end + 4 > MAX_HTTP_HEADERS {
+                return Err("413 Payload Too Large");
+            }
+            break end + 4;
+        }
+        if bytes.len() >= MAX_HTTP_HEADERS {
+            return Err("413 Payload Too Large");
+        }
+        let remaining = HTTP_READ_TIMEOUT
+            .checked_sub(started.elapsed())
+            .ok_or("400 Bad Request")?;
+        stream
+            .set_read_timeout(Some(remaining))
+            .map_err(|_| "400 Bad Request")?;
+        let n = stream.read(&mut buf).map_err(|_| "400 Bad Request")?;
+        if n == 0 {
+            return Err("400 Bad Request");
+        }
+        bytes.extend_from_slice(&buf[..n]);
+    };
+    let headers = std::str::from_utf8(&bytes[..header_end])
+        .map_err(|_| "400 Bad Request")?
+        .to_string();
+    let mut content_length = None;
+    for line in headers
+        .split("\r\n")
+        .skip(1)
+        .take_while(|line| !line.is_empty())
+    {
+        let (key, value) = line.split_once(':').ok_or("400 Bad Request")?;
+        if key.eq_ignore_ascii_case("transfer-encoding") {
+            return Err("400 Bad Request");
+        }
+        if key.eq_ignore_ascii_case("content-length") {
+            let value = value.trim();
+            if content_length.is_some()
+                || value.is_empty()
+                || !value.bytes().all(|b| b.is_ascii_digit())
+            {
+                return Err("400 Bad Request");
+            }
+            content_length = Some(
+                value
+                    .parse::<usize>()
+                    .map_err(|_| "413 Payload Too Large")?,
+            );
+        }
+    }
+    let body_length = content_length.unwrap_or(0);
+    if body_length > MAX_HTTP_BODY {
+        return Err("413 Payload Too Large");
+    }
+    let request_length = header_end + body_length;
+    while bytes.len() < request_length {
+        let remaining = HTTP_READ_TIMEOUT
+            .checked_sub(started.elapsed())
+            .ok_or("400 Bad Request")?;
+        stream
+            .set_read_timeout(Some(remaining))
+            .map_err(|_| "400 Bad Request")?;
+        let size = buf.len().min(request_length - bytes.len());
+        let n = stream
+            .read(&mut buf[..size])
+            .map_err(|_| "400 Bad Request")?;
+        if n == 0 {
+            return Err("400 Bad Request");
+        }
+        bytes.extend_from_slice(&buf[..n]);
+    }
+    let body = std::str::from_utf8(&bytes[header_end..request_length])
+        .map_err(|_| "400 Bad Request")?
+        .to_string();
+    Ok((headers, body))
+}
+
 fn validate_loopback_and_token(raw_req: &str, query: &str, expected_token: &str) -> bool {
     let mut header_token: Option<&str> = None;
+    let mut cookie_token: Option<&str> = None;
     let mut host_ok = false;
     let mut origin_ok = true;
 
@@ -431,6 +534,11 @@ fn validate_loopback_and_token(raw_req: &str, query: &str, expected_token: &str)
             let val = v.trim();
             if key.eq_ignore_ascii_case("x-browsify-token") {
                 header_token = Some(val);
+            } else if key.eq_ignore_ascii_case("cookie") {
+                cookie_token = val.split(';').find_map(|cookie| {
+                    let (name, value) = cookie.trim().split_once('=')?;
+                    (name == "browsify-session").then_some(value)
+                });
             } else if key.eq_ignore_ascii_case("host") {
                 host_ok = val.starts_with("127.0.0.1:")
                     || val.starts_with("localhost:")
@@ -454,7 +562,9 @@ fn validate_loopback_and_token(raw_req: &str, query: &str, expected_token: &str)
         }
     });
 
-    let token_matches = header_token == Some(expected_token) || query_token == Some(expected_token);
+    let token_matches = header_token == Some(expected_token)
+        || query_token == Some(expected_token)
+        || cookie_token == Some(expected_token);
     host_ok && origin_ok && token_matches
 }
 
@@ -472,10 +582,7 @@ fn generate_session_token() -> Result<String, String> {
 }
 
 fn inject_session_token(html: &str, token: &str) -> String {
-    let script = format!(
-        "<script>window.__BROWSIFY_TOKEN__ = {:?};</script>",
-        token
-    );
+    let script = format!("<script>window.__BROWSIFY_TOKEN__ = {:?};</script>", token);
     if let Some(idx) = html.find("</head>") {
         let mut out = String::with_capacity(html.len() + script.len());
         out.push_str(&html[..idx]);
@@ -581,9 +688,11 @@ fn handle_rpc(
             serde_json::Value::Array(events).to_string()
         }
         "getRules" => {
-            let rules_path = RulesFile::default_path(profile_resolver.home_dir());
+            let rules_path = engine.lock().unwrap().rules_path();
             let rf = RulesFile::load_from_path(&rules_path).unwrap_or_default();
-            let path_str = rules_path.exists().then(|| rules_path.display().to_string());
+            let path_str = rules_path
+                .exists()
+                .then(|| rules_path.display().to_string());
             serde_json::json!({
                 "type": "rules",
                 "message": {
@@ -605,8 +714,22 @@ fn handle_rpc(
                 .to_string();
             };
             match serde_json::from_value::<RulesFile>(payload.clone()) {
-                Ok(rf) => {
-                    let rules_path = RulesFile::default_path(profile_resolver.home_dir());
+                Ok(mut rf) => {
+                    let mut eng = engine.lock().unwrap();
+                    let rules_path = eng.rules_path();
+                    // Older clients may send only rules/defaults. Omission is not
+                    // a request to erase preferences; explicit options still replace them.
+                    if payload.get("options").is_none() {
+                        match RulesFile::load_from_path(&rules_path) {
+                            Ok(existing) => rf.options = existing.options,
+                            Err(e) => {
+                                return serde_json::json!({
+                                    "type": "saveRulesError", "message": { "error": e }
+                                })
+                                .to_string()
+                            }
+                        }
+                    }
                     if let Err(e) = rf.save_to_path(&rules_path) {
                         return serde_json::json!({
                             "type": "saveRulesError",
@@ -614,7 +737,6 @@ fn handle_rpc(
                         })
                         .to_string();
                     }
-                    let mut eng = engine.lock().unwrap();
                     eng.update_rules(&rf);
                     let resp = serde_json::json!([
                         {
@@ -720,11 +842,7 @@ fn handle_rpc(
             let ok = crate::macos::set_as_default_browser();
             let eng = engine.lock().unwrap();
             log_event(
-                if ok {
-                    LogLevel::Info
-                } else {
-                    LogLevel::Warn
-                },
+                if ok { LogLevel::Info } else { LogLevel::Warn },
                 if ok {
                     "Requested macOS to set Browsify as the default browser"
                 } else {
@@ -758,18 +876,47 @@ fn guess_mime(path: &Path) -> &'static str {
     }
 }
 
+fn write_document_response(
+    stream: &mut impl Write,
+    html: &str,
+    token: &str,
+) -> std::io::Result<()> {
+    // Keep refreshes/deep links authenticated after client-side navigation drops
+    // the bootstrap query. This session cookie is not readable by scripts.
+    let headers =
+        format!("Set-Cookie: browsify-session={token}; HttpOnly; SameSite=Strict; Path=/\r\n");
+    write_http_response_with_headers(
+        stream,
+        "200 OK",
+        "text/html; charset=utf-8",
+        &headers,
+        html.as_bytes(),
+    )
+}
+
 fn write_http_response(
     stream: &mut impl Write,
     status: &str,
     content_type: &str,
     body: &[u8],
 ) -> std::io::Result<()> {
+    write_http_response_with_headers(stream, status, content_type, "", body)
+}
+
+fn write_http_response_with_headers(
+    stream: &mut impl Write,
+    status: &str,
+    content_type: &str,
+    extra_headers: &str,
+    body: &[u8],
+) -> std::io::Result<()> {
     write!(
         stream,
-        "HTTP/1.1 {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        "HTTP/1.1 {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nCache-Control: no-store\r\n{}Connection: close\r\n\r\n",
         status,
         content_type,
-        body.len()
+        body.len(),
+        extra_headers,
     )?;
     stream.write_all(body)?;
     stream.flush()

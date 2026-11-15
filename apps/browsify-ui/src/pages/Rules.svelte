@@ -48,9 +48,7 @@
   function save() {
     clearTimeout(saveTimer);
     const payload: RulesFile = {
-      defaultBrowser: rulesFile.defaultBrowser,
-      defaultProfile: rulesFile.defaultProfile,
-      options: rulesFile.options,
+      ...rulesFile,
       rules,
     };
     window.finicky.sendMessage({ type: "saveRules", payload });
@@ -60,16 +58,7 @@
   function scheduleSave() {
     clearTimeout(saveTimer);
     pendingSave = true;
-    saveTimer = setTimeout(() => {
-      const payload: RulesFile = {
-        defaultBrowser: rulesFile.defaultBrowser,
-        defaultProfile: rulesFile.defaultProfile,
-        options: rulesFile.options,
-        rules,
-      };
-      window.finicky.sendMessage({ type: "saveRules", payload });
-      pendingSave = false;
-    }, SAVE_DEBOUNCE);
+    saveTimer = setTimeout(save, SAVE_DEBOUNCE);
   }
 
   onDestroy(() => {
