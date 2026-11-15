@@ -7,12 +7,17 @@ use std::net::{Shutdown, TcpStream};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 static NEXT_SERVER: AtomicUsize = AtomicUsize::new(0);
+// UI processes share a per-user singleton lock even with distinct HOME values.
+// Serialize setup as well to avoid copying executables while another test spawns.
+static SERVER_LOCK: Mutex<()> = Mutex::new(());
 
 struct Server {
+    _guard: MutexGuard<'static, ()>,
     child: Child,
     root: PathBuf,
     addr: String,
@@ -23,6 +28,7 @@ struct Server {
 
 impl Server {
     fn start(custom_rules: bool) -> Self {
+        let guard = SERVER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let root = std::env::temp_dir().join(format!(
             "browsify-http-{}-{}-{}",
             std::process::id(),
@@ -98,6 +104,7 @@ impl Server {
             .expect("server startup URL");
         let (addr, token) = url.split_once("/?token=").unwrap();
         Self {
+            _guard: guard,
             child,
             root,
             addr: addr.into(),
