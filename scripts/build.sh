@@ -1,5 +1,8 @@
 #!/bin/bash
-set -e
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+VERSION=$(cargo metadata --no-deps --locked --format-version 1 | jq -r '.packages[] | select(.name == "browsify") | .version')
 
 # Build browsify-ui
 (
@@ -12,6 +15,8 @@ copy_assets() {
     mkdir -p "${APP_DIR}/Contents/Resources/ui"
     cp -r apps/browsify-ui/dist/* "${APP_DIR}/Contents/Resources/ui/"
     cp apps/browsify/assets/Info.plist "${APP_DIR}/Contents/Info.plist"
+    /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION}" "${APP_DIR}/Contents/Info.plist"
+    /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${VERSION}" "${APP_DIR}/Contents/Info.plist"
     cp -r apps/browsify/assets/Resources/* "${APP_DIR}/Contents/Resources/"
 }
 
@@ -23,7 +28,7 @@ build_arch() {
     mkdir -p "${APP_DIR}/Contents/MacOS"
     mkdir -p "${APP_DIR}/Contents/Resources"
 
-    cargo build --release --target "${RUST_TARGET}" -p browsify
+    cargo build --locked --release --target "${RUST_TARGET}" -p browsify
     cp "target/${RUST_TARGET}/release/browsify" "${APP_DIR}/Contents/MacOS/browsify"
 }
 
@@ -32,6 +37,7 @@ if [ "${BUILD_UNIVERSAL:-0}" = "1" ]; then
     build_arch x86_64-apple-darwin amd64
 
     APP_DIR="apps/browsify/build/Browsify.app"
+    rm -rf "${APP_DIR}"
     mkdir -p "${APP_DIR}/Contents/MacOS"
     mkdir -p "${APP_DIR}/Contents/Resources"
 
@@ -48,7 +54,7 @@ else
     mkdir -p "${APP_DIR}/Contents/MacOS"
     mkdir -p "${APP_DIR}/Contents/Resources"
 
-    cargo build --release -p browsify
+    cargo build --locked --release -p browsify
     cp target/release/browsify "${APP_DIR}/Contents/MacOS/browsify"
     copy_assets "${APP_DIR}"
 fi

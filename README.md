@@ -74,6 +74,52 @@ browsify list-profiles
 browsify ui
 ```
 
+## Builds and releases
+
+CI runs Rust workspace tests and UI checks/tests on pull requests and pushes to
+`main`. The macOS build workflow also produces an unsigned universal app artifact.
+
+To publish a stable release:
+
+1. Update `[workspace.package].version` in `Cargo.toml` and run
+   `cargo check --workspace` to refresh the workspace versions in `Cargo.lock`.
+2. Commit the version changes and merge to `main` after CI passes.
+3. Tag that commit and push the tag (substitute your version):
+
+   ```sh
+   git tag v0.1.0
+   git push origin v0.1.0
+   ```
+
+The Release workflow rejects tags that do not match the Cargo version, runs Rust
+and UI checks/tests, builds for Apple Silicon and Intel (macOS 12+), and publishes
+`Browsify-universal.tar.gz` and `SHA256SUMS` to GitHub Releases. No additional
+secrets are required: publishing uses the workflow's `GITHUB_TOKEN`. The app bundle
+version is stamped from Cargo during each build. Only stable `vX.Y.Z` tags are
+supported. To retry a failed run, rerun it in GitHub Actions; if a release already
+exists, publishing fails rather than overwriting its assets.
+
+For a local release build on macOS, install Node.js 22, Rust, `jq`, and Xcode command
+line tools, then run:
+
+```sh
+rustup target add aarch64-apple-darwin x86_64-apple-darwin
+./scripts/install.sh
+./scripts/release.sh
+(cd dist && shasum -a 256 -c SHA256SUMS)
+```
+
+Release builds are **unsigned and not notarized**, so Gatekeeper may block them.
+Download and extract the archive, quit Browsify, replace the installed app, then
+relaunch it. Developer ID signing and Apple notarization are not configured yet.
+
+### Update support
+
+Browsify can check the latest GitHub Release when configuration is loaded or
+updated, with results cached for 24 hours. Enable **Check for updates** in
+Preferences to receive release information and a link to the release page.
+It does **not** download, install, or restart into new versions automatically.
+
 ## Credits & License
 
 MIT License.

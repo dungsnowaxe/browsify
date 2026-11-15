@@ -1,0 +1,92 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '12.0'
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - name: Validate release tag
+        run: |
+          version=$(cargo metadata --no-deps --locked --format-version 1 | jq -r '.packages[] | select(.name == "browsify") | .version')
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          test "$RELEASE_TAG" = "v$version"
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/browsify-ui/package-lock.json
+      - name: Install UI dependencies
+        run: ./scripts/install.sh
+      - name: Check and test UI
+        working-directory: apps/browsify-ui
+        run: |
+          npm run check
+          npm test
+      - name: Test Rust workspace
+        run: cargo test --workspace --locked
+      - name: Build unsigned universal release
+        run: ./scripts/release.sh
+      - name: Verify release bundle and archive
+        run: |
+          lipo -verify_arch arm64 x86_64 apps/browsify/build/Browsify.app/Contents/MacOS/browsify
+          plutil -lint apps/browsify/build/Browsify.app/Contents/Info.plist
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' apps/browsify/build/Browsify.app/Contents/Info.plist)" = "${RELEASE_TAG#v}"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' apps/browsify/build/Browsify.app/Contents/Info.plist)" = "${RELEASE_TAG#v}"
+          test -s apps/browsify/build/Browsify.app/Contents/Resources/ui/index.html
+          cd dist
+          shasum -a 256 -c SHA256SUMS
+          tar -tzf Browsify-universal.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release
+          path: |
+            dist/Browsify-universal.tar.gz
+            dist/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release
+          path: dist
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          cd dist
+          sha256sum -c SHA256SUMS
+          printf '%s\n' 'Universal macOS build (Apple Silicon + Intel), macOS 12 or later.' '' \
+            'Unsigned and not notarized: macOS Gatekeeper may block this app. Updates must be installed manually; Browsify only checks for new releases.' > release-notes.md
+          gh release create "$RELEASE_TAG" Browsify-universal.tar.gz SHA256SUMS \
+            --verify-tag --title "Browsify $RELEASE_TAG" --generate-notes --notes-file release-notes.md
