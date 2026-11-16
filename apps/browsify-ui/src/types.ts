@@ -11,6 +11,12 @@ export interface ConfigOptions {
   checkForUpdates: boolean;
 }
 
+export interface SettingsOverrides {
+  defaultBrowser?: string;
+  defaultProfile?: string;
+  options?: Partial<ConfigOptions>;
+}
+
 export interface RulesFile {
   defaultBrowser: string;
   defaultProfile?: string;
@@ -64,5 +70,8 @@ export interface ConfigInfo {
   handlers?: number;
   rewrites?: number;
   defaultBrowser?: string;
+  defaultProfile?: string;
+  defaultBrowserIsDynamic?: boolean;
+  settingsOverrides?: SettingsOverrides;
   options?: Partial<ConfigOptions>;
 }

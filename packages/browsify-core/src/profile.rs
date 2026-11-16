@@ -144,36 +144,14 @@ impl ProfileResolver {
         }
     }
 
-    /// Lists browsers from `BROWSERS_REGISTRY` that are installed on the system
-    /// (checking `/Applications`, `~/Applications`, or existing browser profile directories).
+    /// Lists known browser applications, never inferring installation from profile data.
     pub fn list_installed_browsers(&self) -> Vec<&'static BrowserMeta> {
-        let mut installed = Vec::new();
-        for b in BROWSERS_REGISTRY {
-            let sys_app = Path::new("/Applications").join(format!("{}.app", b.app_name));
-            let sys_core_app =
-                Path::new("/System/Volumes/Preboot/Cryptexes/App/System/Applications")
-                    .join(format!("{}.app", b.app_name));
-            let user_app = self
-                .home_dir
-                .join("Applications")
-                .join(format!("{}.app", b.app_name));
-            let has_profile_dir = !b.config_dir_relative.is_empty()
-                && self
-                    .home_dir
-                    .join("Library/Application Support")
-                    .join(b.config_dir_relative)
-                    .exists();
-
-            if sys_app.exists() || sys_core_app.exists() || user_app.exists() || has_profile_dir {
-                installed.push(b);
-            }
-        }
-        if installed.is_empty() {
-            // Fallback on non-macOS or clean test environments
-            BROWSERS_REGISTRY.iter().collect()
-        } else {
-            installed
-        }
+        installed_browsers_in(&[
+            PathBuf::from("/Applications"),
+            PathBuf::from("/System/Applications"),
+            PathBuf::from("/System/Volumes/Preboot/Cryptexes/App/System/Applications"),
+            self.home_dir.join("Applications"),
+        ])
     }
 
     /// Resolves a Chromium PWA `app_id` (either a 32-char Chromium extension ID or a PWA `.app` display name
@@ -608,6 +586,17 @@ fn percent_encode_component(input: &str) -> String {
     out
 }
 
+fn installed_browsers_in(roots: &[PathBuf]) -> Vec<&'static BrowserMeta> {
+    BROWSERS_REGISTRY
+        .iter()
+        .filter(|browser| {
+            roots
+                .iter()
+                .any(|root| root.join(format!("{}.app", browser.app_name)).is_dir())
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -638,6 +627,25 @@ mod tests {
         let profiles_ini = "[Profile0]\nName=default-release\nPath=Profiles/abc.default-release\n\n[Profile1]\nName=dev-edition\nPath=Profiles/xyz.dev\n";
         fs::write(ff_dir.join("profiles.ini"), profiles_ini).unwrap();
         dir
+    }
+
+    #[test]
+    fn installed_browsers_require_applications_not_leftover_profiles() {
+        let home = make_temp_home();
+        let applications = home.join("Applications");
+        fs::create_dir_all(&applications).unwrap();
+        assert!(installed_browsers_in(&[applications.clone()]).is_empty());
+        fs::create_dir(applications.join("Firefox.app")).unwrap();
+        assert_eq!(
+            installed_browsers_in(&[applications.clone()])
+                .iter()
+                .map(|browser| browser.app_name)
+                .collect::<Vec<_>>(),
+            ["Firefox"]
+        );
+        fs::remove_dir(applications.join("Firefox.app")).unwrap();
+        assert!(installed_browsers_in(&[applications]).is_empty());
+        fs::remove_dir_all(home).unwrap();
     }
 
     #[test]

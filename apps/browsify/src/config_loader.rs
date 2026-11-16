@@ -3,9 +3,32 @@ use browsify_core::{
     NativeRouter, OpenerInfo, ProfileResolver, RulesFile, TomlConfig,
 };
 use browsify_js::HybridEngine;
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
+
+/// Explicit UI preferences, independent of the authored routing configuration.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase", deny_unknown_fields)]
+pub struct SettingsOverrides {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_browser: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_profile: Option<String>,
+    pub options: browsify_core::RulesOptions,
+}
+
+impl SettingsOverrides {
+    fn as_rules_file(&self) -> RulesFile {
+        RulesFile {
+            default_browser: self.default_browser.clone().unwrap_or_default(),
+            default_profile: self.default_profile.clone().unwrap_or_default(),
+            options: Some(self.options.clone()),
+            rules: Vec::new(),
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct ConfigSummary {
@@ -21,6 +44,8 @@ pub struct ConfigSummary {
     pub rewrites_count: usize,
     pub static_rewrites_count: usize,
     pub default_browser: String,
+    pub default_profile: String,
+    pub default_browser_is_dynamic: bool,
     pub options: ConfigOptions,
     pub referenced_profiles: Vec<(String, String)>,
 }
@@ -54,6 +79,8 @@ impl ConfigSummary {
             rewrites_count: total_r,
             static_rewrites_count: total_r,
             default_browser: router.default_browser.name.clone(),
+            default_profile: display_profile(&router.default_browser),
+            default_browser_is_dynamic: false,
             options: router.options.clone(),
             referenced_profiles: collect_router_profiles(router),
         }
@@ -68,12 +95,63 @@ pub struct BrowsifyEngine {
     primary_config_path: Option<PathBuf>,
     config_mtime: Option<u128>,
     rules_mtime: Option<u128>,
+    settings_mtime: Option<u128>,
+    settings: SettingsOverrides,
     backend: EngineBackend,
     summary: ConfigSummary,
 }
 
 impl BrowsifyEngine {
     pub fn load(
+        home_dir: &Path,
+        custom_config_path: Option<&Path>,
+        custom_rules_path: Option<&Path>,
+        skip_primary_config: bool,
+    ) -> Result<Self, String> {
+        let mut engine = Self::load_baseline(
+            home_dir,
+            custom_config_path,
+            custom_rules_path,
+            skip_primary_config,
+        )?;
+        let path = engine.settings_path();
+        if path.exists() {
+            engine.settings = serde_json::from_slice(&fs::read(&path).map_err(|e| e.to_string())?)
+                .map_err(|e| format!("Invalid settings: {e}"))?;
+        }
+        engine.settings_mtime = file_mtime(&path);
+        engine.apply_settings();
+        Ok(engine)
+    }
+
+    fn apply_settings(&mut self) {
+        let overrides = self.settings.as_rules_file();
+        match &mut self.backend {
+            EngineBackend::Native(router) => {
+                if let Some(target) = browsify_core::rules_file_default_browser(&overrides) {
+                    router.default_browser = target;
+                }
+                browsify_core::inherit_rules_file_options(
+                    &mut router.options,
+                    &overrides,
+                    ExplicitOptions::NONE,
+                );
+                self.summary.default_browser = router.default_browser.name.clone();
+                self.summary.default_profile = display_profile(&router.default_browser);
+                self.summary.options = router.options.clone();
+                self.summary.referenced_profiles = collect_router_profiles(router);
+            }
+            EngineBackend::Js(js) => {
+                js.apply_settings_overrides(&overrides);
+                self.summary.default_browser = js.report().default_browser_name.clone();
+                self.summary.default_profile = js.report().default_browser_profile.clone();
+                self.summary.default_browser_is_dynamic = js.default_browser_is_dynamic();
+                self.summary.options = js.report().options.clone();
+            }
+        }
+    }
+
+    fn load_baseline(
         home_dir: &Path,
         custom_config_path: Option<&Path>,
         custom_rules_path: Option<&Path>,
@@ -196,6 +274,8 @@ impl BrowsifyEngine {
                 rewrites_count: rep.total_rewrites,
                 static_rewrites_count: rep.static_rewrites,
                 default_browser: rep.default_browser_name,
+                default_profile: rep.default_browser_profile,
+                default_browser_is_dynamic: engine.default_browser_is_dynamic(),
                 options: rep.options,
                 referenced_profiles,
             };
@@ -256,6 +336,8 @@ impl BrowsifyEngine {
             primary_config_path,
             config_mtime,
             rules_mtime,
+            settings_mtime: None,
+            settings: SettingsOverrides::default(),
             backend,
             summary,
         }
@@ -272,9 +354,52 @@ impl BrowsifyEngine {
             .unwrap_or_else(|| RulesFile::default_path(&self.home_dir))
     }
 
-    /// Checks if either the Primary Config or `rules.json` has changed on disk since last load.
+    pub fn settings_path(&self) -> PathBuf {
+        self.rules_path().with_extension("settings.json")
+    }
+
+    pub fn settings(&self) -> &SettingsOverrides {
+        &self.settings
+    }
+
+    pub fn save_settings(&mut self, settings: SettingsOverrides) -> Result<(), String> {
+        if settings
+            .default_browser
+            .as_ref()
+            .is_some_and(|s| s.trim().is_empty())
+        {
+            return Err("Choose a browser before saving.".to_string());
+        }
+        if settings.default_profile.is_some() && settings.default_browser.is_none() {
+            return Err("Choose a browser for this profile.".to_string());
+        }
+        let mut candidate = Self::load_baseline(
+            &self.home_dir,
+            self.custom_config_path.as_deref(),
+            self.custom_rules_path.as_deref(),
+            self.skip_primary_config,
+        )?;
+        candidate.settings = settings;
+        candidate.apply_settings();
+        let path = self.settings_path();
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        let temporary = path.with_extension("json.tmp");
+        let bytes = serde_json::to_vec_pretty(&candidate.settings).map_err(|e| e.to_string())?;
+        fs::write(&temporary, bytes).map_err(|e| e.to_string())?;
+        fs::rename(&temporary, &path).map_err(|e| e.to_string())?;
+        candidate.settings_mtime = file_mtime(&path);
+        *self = candidate;
+        Ok(())
+    }
+
+    /// Checks authored rules and UI preferences for changes since the last load.
     pub fn check_files_changed(&self) -> bool {
         let rules_path = self.rules_path();
+        if file_mtime(&self.settings_path()) != self.settings_mtime {
+            return true;
+        }
         if file_mtime(&rules_path) != self.rules_mtime {
             return true;
         }
@@ -335,31 +460,14 @@ impl BrowsifyEngine {
             EngineBackend::Js(engine) => engine.resolve(&input_url, opener, open_in_background),
         }
     }
+}
 
-    pub fn update_rules(&mut self, rf: &RulesFile) {
-        match &mut self.backend {
-            EngineBackend::Native(router) => {
-                if !self.summary.has_primary_config {
-                    *router = NativeRouter::from_rules_file(rf);
-                    self.summary.default_browser = router.default_browser.name.clone();
-                    self.summary.handlers_count = router.handlers.len();
-                    self.summary.static_handlers_count = router.handlers.len();
-                    self.summary.options = router.options.clone();
-                } else {
-                    router.apply_rules_file_fallbacks(rf, ExplicitOptions::ALL);
-                    self.summary.default_browser = router.default_browser.name.clone();
-                    self.summary.handlers_count =
-                        router.handlers.len() + router.fallback_handlers.len();
-                    self.summary.static_handlers_count = self.summary.handlers_count;
-                }
-            }
-            EngineBackend::Js(engine) => {
-                engine.apply_rules_file_fallbacks(rf);
-                self.summary.default_browser = engine.report().default_browser_name.clone();
-                self.summary.options = engine.report().options.clone();
-            }
-        }
-    }
+fn display_profile(target: &BrowserConfig) -> String {
+    target
+        .container
+        .as_ref()
+        .map(|c| format!("container:{c}"))
+        .unwrap_or_else(|| target.profile.clone())
 }
 
 fn file_mtime(path: &Path) -> Option<u128> {
@@ -542,6 +650,42 @@ pub fn migrate_config(
 mod tests {
     use super::*;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn settings_overrides_preserve_handlers_and_reset_to_primary_values() {
+        for (extension, source) in [
+            ("toml", "default_browser = \"Safari\"\n[options]\nkeep_running = true\n[[handlers]]\nmatch = \"github.com/*\"\nbrowser = \"Google Chrome\"\n"),
+            ("js", "export default { defaultBrowser: 'Safari', options: { keepRunning: true }, handlers: [{ match: 'github.com/*', browser: 'Google Chrome' }] };"),
+            ("ts", "export default { defaultBrowser: () => 'Safari', options: { keepRunning: true }, handlers: [{ match: ({url}) => url.host === 'github.com', browser: 'Google Chrome' }] };"),
+        ] {
+            let dir = std::env::temp_dir().join(format!("browsify-settings-{}-{}", extension, SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()));
+            fs::create_dir_all(&dir).unwrap();
+            let primary = dir.join(format!("config.{extension}"));
+            let rules = dir.join("custom-rules.json");
+            let settings = rules.with_extension("settings.json");
+            fs::write(&primary, source).unwrap();
+            fs::write(&rules, r#"{"defaultBrowser":"Safari","rules":[{"match":"example.org/*","browser":"Brave Browser"}]}"#).unwrap();
+            let mut engine = BrowsifyEngine::load(&dir, Some(&primary), Some(&rules), false).unwrap();
+            fs::write(&settings, r#"{"defaultBrowser":"Firefox","defaultProfile":"container:Work","options":{"keepRunning":false}}"#).unwrap();
+            assert!(engine.check_files_changed(), "settings changes must be watched");
+            engine.reload().unwrap();
+            assert!(!engine.summary().options.keep_running);
+            assert_eq!(engine.summary().default_browser, "Firefox");
+            assert!(!engine.summary().default_browser_is_dynamic);
+            assert_eq!(engine.resolve("https://github.com/project", None, false).unwrap().name, "Google Chrome");
+            assert_eq!(engine.resolve("https://example.org/path", None, false).unwrap().name, "Brave Browser");
+            let target = engine.resolve("https://unmatched.test", None, false).unwrap();
+            assert_eq!(target.name, "Firefox");
+            assert_eq!(target.container.as_deref(), Some("Work"));
+            fs::write(&settings, "{}").unwrap();
+            engine.reload().unwrap();
+            assert!(engine.summary().options.keep_running);
+            assert_eq!(engine.resolve("https://unmatched.test", None, false).unwrap().name, "Safari");
+            assert_eq!(engine.summary().default_browser_is_dynamic, extension == "ts");
+            assert_eq!(fs::read_to_string(&primary).unwrap(), source);
+            fs::remove_dir_all(dir).unwrap();
+        }
+    }
 
     #[test]
     fn test_primary_config_inherits_unset_defaults_from_rules_json() {

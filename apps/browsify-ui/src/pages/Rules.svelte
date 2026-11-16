@@ -187,7 +187,7 @@
 <PageContainer eyebrow="Routing" title="Handler rules">
   {#snippet description()}
     {#if hasPrimaryConfig}
-      The first matching rule wins. <span style="color: var(--accent-color)">Primary Config is active</span> — its handlers run first and take priority over these rules.
+      The first matching rule wins. Existing advanced routing rules run before the rules you add here.
     {:else}
       The first matching rule wins. Use <code>*</code> as a wildcard, e.g. <code>*example.com/*</code>.
     {/if}

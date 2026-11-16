@@ -11,12 +11,16 @@ The external application that initiated a URL open request, characterized by its
 _Avoid_: Caller, sender, source app
 
 **Primary Config**:
-The user-authored configuration file that defines the highest-priority rewrites, handlers, options, and default browser.
+The user-authored configuration file that defines rewrites, highest-priority handlers, and baseline settings, including the default browser.
 _Avoid_: Script, main config
 
 **UI Rules File**:
-The visual-editor rules configuration evaluated as fallback handlers and fallback defaults after the Primary Config.
+The visual-editor rules configuration whose Handler Rules are evaluated after those in the Primary Config.
 _Avoid_: Cached rules, secondary config
+
+**Settings Override**:
+An explicit user preference selected in the UI that takes priority over the corresponding Primary Config setting or built-in default. Removing it restores the underlying setting without changing the Primary Config.
+_Avoid_: Config rewrite, fallback setting
 
 **Rewrite Rule**:
 A rule that matches an incoming URL and mutates or replaces it before handler evaluation.

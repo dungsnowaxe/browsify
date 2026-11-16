@@ -2,10 +2,6 @@
   import { Link } from "svelte-routing";
   import UrlTester from "../components/UrlTester.svelte";
   import BrowserIcon from "../components/BrowserIcon.svelte";
-  import RulesIcon from "../components/icons/Rules.svelte";
-  import TestIcon from "../components/icons/Test.svelte";
-  import LogsIcon from "../components/icons/Logs.svelte";
-  import PreferencesIcon from "../components/icons/Preferences.svelte";
   import type { UpdateInfo, ConfigInfo, RulesFile } from "../types";
 
   export let hasConfig: boolean;
@@ -15,8 +11,8 @@
   export let rulesFile: RulesFile;
   export let installedBrowsers: string[] = [];
 
-  $: defaultBrowser = config.defaultBrowser || rulesFile.defaultBrowser;
-  $: defaultProfile = config.hasPrimaryConfig ? "" : rulesFile.defaultProfile;
+  $: defaultBrowser = config.defaultBrowserIsDynamic ? "Selected by routing rules" : config.defaultBrowser || rulesFile.defaultBrowser;
+  $: defaultProfile = config.defaultProfile ?? rulesFile.defaultProfile;
   $: handlerCount = config.handlers ?? rulesFile.rules.length;
   $: rewriteCount = config.rewrites ?? 0;
   $: totalRules = handlerCount + rewriteCount;
@@ -24,19 +20,13 @@
   $: setupDone = Number(config.isDefaultBrowser === true) + Number(!!defaultBrowser);
   $: setupPct = hasConfig ? setupDone * 50 : 0;
 
-  const actions = [
-    { to: "/rules", label: "Edit rules", icon: RulesIcon },
-    { to: "/test", label: "Test URL", icon: TestIcon },
-    { to: "/troubleshoot", label: "View logs", icon: LogsIcon },
-    { to: "/preferences", label: "Settings", icon: PreferencesIcon },
-  ];
 </script>
 
 <div class="dashboard">
   <div class="dashboard-top">
     <div class="routing-overview">
       <header class="overview-heading">
-        <p class="eyebrow">Browsify <span aria-hidden="true">/</span> Overview</p>
+        <p class="eyebrow">Browsify</p>
         <h1>Browser routing,<br />at a glance.</h1>
       </header>
 
@@ -54,7 +44,7 @@
           {/if}
         </div>
         <div class="setup-progress-row">
-          <div class="setup-track" role="progressbar" aria-label="Routing setup" aria-valuemin="0" aria-valuemax="2" aria-valuenow={hasConfig ? setupDone : 0} aria-valuetext={hasConfig ? `${setupDone} of 2 checks ready` : "Waiting for configuration"}>
+          <div class="setup-track" role="progressbar" aria-label="Routing setup" aria-valuemin="0" aria-valuemax="2" aria-valuenow={hasConfig ? setupDone : 0} aria-valuetext={hasConfig ? `${setupDone} of 2 checks ready` : "Waiting for Browsify"}>
             <span style={`transform:scaleX(${setupPct / 100})`}></span>
           </div>
           <span class="setup-count">{hasConfig ? `${setupDone}/2` : "—"}</span>
@@ -65,14 +55,7 @@
         </div>
       </section>
 
-      <nav class="quick-actions" aria-label="Quick actions">
-        {#each actions as action}
-          <Link to={action.to} class="quick-action">
-            <span class="action-icon" aria-hidden="true"><svelte:component this={action.icon} /></span>
-            <span>{action.label}</span>
-          </Link>
-        {/each}
-      </nav>
+
     </div>
 
     <UrlTester compact />
@@ -81,7 +64,7 @@
   <section class="routing-summary" aria-labelledby="routing-heading">
     <div class="section-heading">
       <h2 id="routing-heading">Your routing</h2>
-      <span class="live-label"><i class:connected={hasConfig}></i>{hasConfig ? "Live configuration" : "Awaiting configuration"}</span>
+      <span class="live-label"><i class:connected={hasConfig}></i>{hasConfig ? "Connected" : "Connecting…"}</span>
     </div>
     <div class="summary-grid">
       <article class="summary-card rule-summary">
@@ -113,7 +96,7 @@
       <Link to="/preferences" class="summary-card destination-card">
         <div class="destination-head"><span>Default target</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M7 7h10v10M7 17 17 7" /></svg></div>
         <div class="destination-value"><BrowserIcon browser={defaultBrowser || ""} size={30} /><strong>{defaultBrowser || "Not configured"}</strong></div>
-        <p>{config.hasPrimaryConfig ? "Managed by Primary Config" : defaultProfile || "Browser default profile"}</p>
+        <p>{defaultProfile || "Browser default profile"}</p>
         <svg class="destination-path" viewBox="0 0 160 40" fill="none" aria-hidden="true"><path d="M4 31h40c18 0 18-23 36-23h65" stroke="currentColor" stroke-width="1.5"/><circle cx="4" cy="31" r="3" fill="currentColor"/><path d="m139 2 6 6-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </Link>
     </div>
@@ -132,7 +115,6 @@
   .dashboard-top { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 28px; align-items: stretch; }
   .routing-overview { min-width: 0; display: flex; flex-direction: column; gap: 24px; }
   .eyebrow { margin: 0 0 14px; color: var(--text-secondary); font-size: 13px; }
-  .eyebrow span { padding: 0 8px; color: var(--browsify-muted); }
   h1 { font: 400 40px/1.14 var(--font-display); letter-spacing: -0.055em; margin: 0; }
   .setup-card { padding: 18px 20px; border-radius: 24px; background: var(--browsify-surface); }
   .setup-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -147,10 +129,6 @@
   .setup-checks span { display: flex; align-items: center; gap: 6px; }
   .setup-checks i { width: 6px; height: 6px; border-radius: 50%; border: 1px solid var(--text-secondary); }
   .setup-checks i.ready { border-color: var(--log-success); background: var(--log-success); }
-  .quick-actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
-  .quick-actions :global(.quick-action) { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 10px 4px 12px; border-radius: 36px; background: var(--browsify-surface); color: var(--text-primary); text-decoration: none; font-size: 13px; white-space: nowrap; transition: transform 180ms ease, background-color 180ms ease; }
-  .action-icon { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 50%; background: var(--browsify-control); box-shadow: var(--browsify-shadow-control); }
-  .action-icon :global(svg) { width: 19px; height: 19px; }
   .routing-summary { display: flex; flex-direction: column; gap: 16px; }
   .section-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
   .section-heading h2 { margin: 0; font-size: 20px; font-weight: 500; letter-spacing: -0.035em; }
@@ -193,10 +171,9 @@
   .notices :global(.notice.error) { color: var(--log-error); }
   .notices :global(.notice span) { white-space: nowrap; }
   @media (hover: hover) and (pointer: fine) {
-    .quick-actions :global(.quick-action:hover), .summary-grid :global(.destination-card:hover) { transform: translateY(-2px); }
     .setup-head :global(.setup-action:hover) { transform: translateY(-1px); }
   }
-  .quick-actions :global(.quick-action:active), .setup-head :global(.setup-action:active) { transform: translateY(1px) scale(0.985); }
+  .setup-head :global(.setup-action:active) { transform: translateY(1px) scale(0.985); }
   @media (max-width: 1100px) {
     .dashboard-top { gap: 20px; }
     h1 { font-size: 34px; }
@@ -223,15 +200,11 @@
     .setup-head { gap: 8px; }
     .setup-head :global(.setup-action) { width: 24px; height: 24px; padding: 6px; }
     .setup-checks { flex-wrap: wrap; gap: 6px 12px; }
-    .quick-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .quick-actions :global(.quick-action) { flex-direction: row; justify-content: center; border-radius: 22px; font-size: 13px; gap: 6px; }
-    .action-icon { width: 28px; height: 28px; box-shadow: none; background: transparent; }
-    .action-icon :global(svg) { width: 17px; height: 17px; }
     .section-heading { align-items: flex-start; flex-direction: column; gap: 4px; }
     .rule-legend { flex-direction: column; gap: 12px; }
     .notices :global(.notice) { align-items: flex-start; flex-direction: column; }
   }
   @media (prefers-reduced-motion: reduce) {
-    .quick-actions :global(.quick-action), .setup-head :global(.setup-action), .summary-grid :global(.destination-card) { transform: none !important; }
+    .setup-head :global(.setup-action), .summary-grid :global(.destination-card) { transform: none !important; }
   }
 </style>

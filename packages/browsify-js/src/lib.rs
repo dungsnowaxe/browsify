@@ -663,6 +663,10 @@ impl HybridEngine {
         &self.report
     }
 
+    pub fn default_browser_is_dynamic(&self) -> bool {
+        matches!(self.default_browser, HybridDefaultBrowser::Js)
+    }
+
     pub fn set_fallback_rules(&mut self, rules: &[Rule]) {
         self.fallback_handlers = compile_json_rules(rules);
     }
@@ -687,6 +691,20 @@ impl HybridEngine {
                 check_for_updates: self.report.explicit_check_for_updates,
             },
         );
+    }
+
+    /// Applies explicit UI preferences without changing authored or fallback handlers.
+    pub fn apply_settings_overrides(&mut self, settings: &RulesFile) {
+        if let Some(target) = rules_file_default_browser(settings) {
+            self.report.default_browser_name = target.name.clone();
+            self.report.default_browser_profile = target
+                .container
+                .as_ref()
+                .map(|c| format!("container:{c}"))
+                .unwrap_or_else(|| target.profile.clone());
+            self.default_browser = HybridDefaultBrowser::Native(target);
+        }
+        inherit_rules_file_options(&mut self.report.options, settings, ExplicitOptions::NONE);
     }
 
     /// Resolves `raw_url` through the ordered hybrid pipeline (interleaving Native Rust steps
