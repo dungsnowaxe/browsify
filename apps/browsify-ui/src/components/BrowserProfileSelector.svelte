@@ -62,9 +62,12 @@
         </div>
       {/if}
     </div>
+    {#if browser && !installedBrowsers.includes(browser)}
+      <p class="availability-note">Not in the detected browser list. Custom targets are supported.</p>
+    {/if}
   </div>
 
-  {#if !hideProfile && !isCustom && browser}
+  {#if !hideProfile && browser}
     <div class="field">
       <label for={`${fieldId}-profile`}>Profile</label>
       <div class="field-control">
@@ -88,6 +91,7 @@
 <style>
   .browser-select-row { width: 100%; min-width: 0; display: flex; gap: 16px; align-items: flex-start; }
   .field { flex: 1; min-width: 0; }
+  .availability-note { margin: 8px 0 0; color: var(--log-warning); font-size: 13px; }
   label { display: block; font-size: 13px; color: var(--text-secondary); margin-bottom: 6px; }
   .field-control { display: flex; align-items: center; gap: 6px; }
   .select-wrapper { position: relative; flex: 1; min-width: 0; }

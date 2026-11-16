@@ -3,20 +3,20 @@
   import PageContainer from "../components/PageContainer.svelte";
   import BrowserProfileSelector from "../components/BrowserProfileSelector.svelte";
   import OptionRow from "../components/OptionRow.svelte";
-  import LockIcon from "../components/icons/Lock.svelte";
-  import type { ConfigInfo, RulesFile, UpdateInfo } from "../types";
   import { toast } from "../lib/toast";
+  import type { ConfigInfo, ConfigOptions, SettingsOverrides, UpdateInfo } from "../types";
 
-  export let updateInfo: UpdateInfo | null = null;
   export let hasConfig: boolean;
   export let config: ConfigInfo;
-  export let rulesFile: RulesFile;
-  export let hasPrimaryConfig: boolean;
   export let installedBrowsers: string[] = [];
   export let profilesByBrowser: Record<string, string[]> = {};
+  export let settingsSaveState: "idle" | "saving" | "saved" | "error" = "idle";
+  export let updateInfo: UpdateInfo | null = null;
+  export let updateChecking = false;
 
   let saveTimer: ReturnType<typeof setTimeout>;
   let pendingSave = false;
+  let overrides: SettingsOverrides = {};
   let keepRunning = true;
   let hideIcon = false;
   let logRequests = false;
@@ -26,53 +26,70 @@
   let defaultBrowserIsCustom = false;
   let defaultProfileIsCustom = false;
 
-  // Sync server updates, not local edits (an empty custom field is a valid edit state).
-  function syncPreferences(nextConfig: ConfigInfo, nextRules: RulesFile, primary: boolean) {
-    const options = primary ? nextConfig.options : { ...nextConfig.options, ...nextRules.options };
-    keepRunning = options?.keepRunning ?? true;
-    hideIcon = options?.hideIcon ?? false;
-    logRequests = options?.logRequests ?? false;
-    checkForUpdates = options?.checkForUpdates ?? true;
-    defaultBrowser = primary ? (nextConfig.defaultBrowser ?? "") : nextRules.defaultBrowser || nextConfig.defaultBrowser || "Safari";
-    defaultProfile = primary ? "" : nextRules.defaultProfile ?? "";
-    defaultBrowserIsCustom = defaultBrowser !== "" && !installedBrowsers.includes(defaultBrowser);
-    defaultProfileIsCustom = defaultProfile !== "" && !(profilesByBrowser[defaultBrowser] ?? []).includes(defaultProfile);
+  function syncPreferences(next: ConfigInfo, status: string) {
+    if (pendingSave || status === "saving" || status === "error") return;
+    overrides = structuredClone(next.settingsOverrides ?? {});
+    keepRunning = next.options?.keepRunning ?? true;
+    hideIcon = next.options?.hideIcon ?? false;
+    logRequests = next.options?.logRequests ?? false;
+    checkForUpdates = next.options?.checkForUpdates ?? true;
+    defaultBrowser = next.defaultBrowserIsDynamic ? "" : next.defaultBrowser ?? "";
+    defaultProfile = next.defaultProfile ?? "";
+    reconcileChoices(installedBrowsers, profilesByBrowser);
   }
   function reconcileChoices(browsers: string[], profiles: Record<string, string[]>) {
     if (defaultBrowser) defaultBrowserIsCustom = !browsers.includes(defaultBrowser);
     if (defaultProfile) defaultProfileIsCustom = !(profiles[defaultBrowser] ?? []).includes(defaultProfile);
   }
-  $: syncPreferences(config, rulesFile, hasPrimaryConfig);
+  $: syncPreferences(config, settingsSaveState);
   $: reconcileChoices(installedBrowsers, profilesByBrowser);
+  $: hasOverrides = !!overrides.defaultBrowser || Object.keys(overrides.options ?? {}).length > 0;
   $: if (defaultBrowser && !defaultBrowserIsCustom && profilesByBrowser[defaultBrowser] === undefined) {
     window.finicky.sendMessage({ type: "getBrowserProfiles", browser: defaultBrowser });
   }
 
   function onLockedClick() {
-    if (!hasConfig) {
-      toast.show("Waiting for Browsify", "info", "Open the Browsify app to connect and edit settings.");
-      return;
-    }
-    toast.show("Primary Config is active", "info", "These settings are managed by your Primary Config (.toml/.js/.ts). Edit that file to change them.");
+    toast.show("Waiting for Browsify", "info", "Open Browsify to connect and change settings.");
   }
-
   function save() {
-    if (hasPrimaryConfig || !hasConfig) return;
+    if (!hasConfig) return;
     clearTimeout(saveTimer);
     pendingSave = false;
-    window.finicky.sendMessage({
-      type: "saveRules",
-      payload: { ...rulesFile, defaultBrowser, defaultProfile, options: { keepRunning, hideIcon, logRequests, checkForUpdates } },
-    });
+    window.finicky.sendMessage({ type: "saveSettings", payload: overrides });
   }
-
   function scheduleSave() {
-    if (hasPrimaryConfig || !hasConfig) return;
+    if (!hasConfig) return;
     clearTimeout(saveTimer);
     pendingSave = true;
     saveTimer = setTimeout(save, 500);
   }
-
+  function setOption(key: keyof ConfigOptions, value: boolean) {
+    overrides = { ...overrides, options: { ...overrides.options, [key]: value } };
+    scheduleSave();
+  }
+  function updateTarget() {
+    if (defaultBrowser.trim()) {
+      overrides = { ...overrides, defaultBrowser: defaultBrowser.trim(), defaultProfile };
+    } else {
+      const { defaultBrowser: _browser, defaultProfile: _profile, ...rest } = overrides;
+      overrides = rest;
+    }
+  }
+  function saveTarget() {
+    if (defaultBrowserIsCustom && !defaultBrowser.trim()) return;
+    updateTarget();
+    save();
+  }
+  function scheduleTarget() {
+    if (defaultBrowserIsCustom && !defaultBrowser.trim()) return;
+    updateTarget();
+    scheduleSave();
+  }
+  function resetSettings() {
+    clearTimeout(saveTimer);
+    overrides = {};
+    save();
+  }
   onDestroy(() => {
     clearTimeout(saveTimer);
     if (pendingSave) save();
@@ -97,7 +114,7 @@
   <section class="browser-card glass-panel" aria-labelledby="browser-heading">
     <div class="card-heading">
       <div><h2 id="browser-heading">Default browser target</h2><p>Used when no handler rule matches a link.</p></div>
-      {#if hasPrimaryConfig}<span class="managed"><LockIcon />Primary Config</span>{/if}
+
     </div>
     <BrowserProfileSelector
       browser={defaultBrowser}
@@ -106,24 +123,27 @@
       isProfileCustom={defaultProfileIsCustom}
       {installedBrowsers}
       {profilesByBrowser}
-      disabled={hasPrimaryConfig || !hasConfig}
-      hideProfile={hasPrimaryConfig}
-      browserPlaceholder="System default"
+      disabled={!hasConfig}
+      browserPlaceholder={config.defaultBrowserIsDynamic ? "Selected by routing rules" : "Use default"}
       onBrowserChange={(browser, profile, isCustom) => { defaultBrowser = browser; defaultProfile = profile; defaultBrowserIsCustom = isCustom; defaultProfileIsCustom = false; }}
       onProfileChange={(profile, isProfileCustom) => { defaultProfile = profile; defaultProfileIsCustom = isProfileCustom; }}
       onRequestProfiles={(browser) => window.finicky.sendMessage({ type: "getBrowserProfiles", browser })}
-      onSave={save}
-      onInput={scheduleSave}
+      onSave={saveTarget}
+      onInput={scheduleTarget}
     />
   </section>
 
   <section class="behavior" aria-labelledby="behavior-heading">
-    <div class="card-heading"><h2 id="behavior-heading">App behavior</h2><span class="save-note">{hasPrimaryConfig ? "Managed by Primary Config" : "Changes save automatically"}</span></div>
+    <div class="card-heading"><h2 id="behavior-heading">App behavior</h2><span class="save-note" role="status">{!hasConfig ? "Waiting for Browsify" : pendingSave || settingsSaveState === "saving" ? "Saving…" : settingsSaveState === "error" ? "Changes not saved" : settingsSaveState === "saved" ? "Changes saved" : "Changes save automatically"}</span></div>
     <div class="options-grid">
-      <OptionRow label="Keep running" hint="Stay available in the background" bind:checked={keepRunning} locked={hasPrimaryConfig || !hasConfig} onLockedClick={onLockedClick} onchange={scheduleSave} />
-      <OptionRow label="Hide menu bar icon" hint="Keep Browsify out of the menu bar" bind:checked={hideIcon} locked={hasPrimaryConfig || !hasConfig} onLockedClick={onLockedClick} onchange={scheduleSave} />
-      <OptionRow label="Log URL requests" hint="Write URL handling activity to a log" bind:checked={logRequests} locked={hasPrimaryConfig || !hasConfig} onLockedClick={onLockedClick} onchange={scheduleSave} />
-      <OptionRow label="Automatic updates" hint="Check daily and download signed updates. Ask before restarting." bind:checked={checkForUpdates} locked={hasPrimaryConfig || !hasConfig} onLockedClick={onLockedClick} onchange={scheduleSave} />
+      <OptionRow label="Keep running" hint="Stay available in the background" bind:checked={keepRunning} locked={!hasConfig} {onLockedClick} onchange={() => setOption("keepRunning", keepRunning)} />
+      <OptionRow label="Hide menu bar icon" hint="Keep Browsify out of the menu bar" bind:checked={hideIcon} locked={!hasConfig} {onLockedClick} onchange={() => setOption("hideIcon", hideIcon)} />
+      <OptionRow label="Log URL requests" hint="Write URL handling activity to a log" bind:checked={logRequests} locked={!hasConfig} {onLockedClick} onchange={() => setOption("logRequests", logRequests)} />
+      <OptionRow label="Automatic updates" hint="Check daily and download signed updates. Ask before restarting." bind:checked={checkForUpdates} locked={!hasConfig} {onLockedClick} onchange={() => setOption("checkForUpdates", checkForUpdates)} />
+    </div>
+    <div class="settings-actions">
+      {#if hasOverrides}<button class="app-button" type="button" disabled={!hasConfig || settingsSaveState === "saving"} on:click={resetSettings}>Reset to defaults</button>{/if}
+      {#if settingsSaveState === "error"}<button class="app-button" type="button" on:click={save}>Retry saving</button>{/if}
     </div>
   </section>
 
@@ -133,7 +153,7 @@
         <h2 id="updates-heading">Browsify updates</h2>
         <p aria-live="polite">{updateInfo?.error ?? (updateInfo?.status === "checking" ? "Checking for updates…" : updateInfo?.status === "downloading" ? "Downloading and verifying update…" : updateInfo?.status === "ready" ? `${updateInfo.version} is ready to install.` : updateInfo?.status === "upToDate" ? "You have the latest stable release." : updateInfo?.hasUpdate ? `${updateInfo.version} is available.` : "Manual checks are always available, even with automatic updates off.")}</p>
       </div>
-      <button class="app-button" type="button" disabled={!hasConfig || updateInfo?.status === "checking" || updateInfo?.status === "downloading"} on:click={() => window.finicky.sendMessage({ type: "checkForUpdates" })}>Check for Updates…</button>
+      <button class="app-button" type="button" disabled={!hasConfig || updateChecking || updateInfo?.status === "checking" || updateInfo?.status === "downloading"} on:click={() => window.finicky.sendMessage({ type: "checkForUpdates" })}>Check for Updates…</button>
     </div>
     {#if updateInfo?.status === "ready"}
       <button class="app-button" type="button" on:click={() => window.finicky.sendMessage({ type: "restartToUpdate" })}>Restart to Update</button>
@@ -153,8 +173,7 @@
   .ready-label { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--log-success); white-space: nowrap; }
   .card-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
   .browser-card { display: flex; flex-direction: column; gap: 20px; }
-  .managed { display: flex; align-items: center; gap: 6px; color: var(--text-secondary); font-size: 13px; }
-  .managed :global(svg) { width: 14px; height: 14px; }
+  .settings-actions { display: flex; flex-wrap: wrap; gap: 12px; }
   .behavior { display: flex; flex-direction: column; gap: 16px; }
   .save-note { color: var(--text-secondary); font-size: 13px; }
   .options-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }

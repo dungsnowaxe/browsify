@@ -143,6 +143,20 @@ impl State {
         publish(self, "ready", None);
     }
 
+    fn begin_check(&mut self, home: &Path, manual: bool) -> Option<u64> {
+        if self.busy || self.restarting {
+            return None;
+        }
+        if !manual && (!self.enabled || now().saturating_sub(preferences(home).last_check) < DAY) {
+            return None;
+        }
+        self.busy = true;
+        self.manual = manual;
+        self.generation += 1;
+        publish(self, "checking", None);
+        Some(self.generation)
+    }
+
     fn configure(&mut self, enabled: bool) {
         if self.enabled != enabled {
             self.enabled = enabled;
@@ -252,17 +266,9 @@ impl Drop for UpdateActivity {
 fn start_check(home: &Path, manual: bool) {
     let mut s = state().lock().unwrap();
     s.restore(home);
-    if s.busy || s.restarting {
+    let Some(generation) = s.begin_check(home, manual) else {
         return;
-    }
-    if !manual && (!s.enabled || now().saturating_sub(preferences(home).last_check) < DAY) {
-        return;
-    }
-    s.busy = true;
-    s.manual = manual;
-    s.generation += 1;
-    let generation = s.generation;
-    publish(&mut s, "checking", None);
+    };
     s.activities += 1;
     let home = home.to_owned();
     thread::spawn(move || {
@@ -1121,6 +1127,8 @@ mod tests {
 
     #[test]
     fn restart_queue_persists_link_context_and_routes_normally_outside_restart() {
+        // Match the production caller contract and isolate concurrent routing tests.
+        let _routing = ROUTING.lock().unwrap();
         let home = tempfile::tempdir().unwrap();
         let opener = Some(browsify_core::OpenerInfo {
             name: "Test opener".into(),
@@ -1153,16 +1161,57 @@ mod tests {
     }
 
     #[test]
+    fn manual_checks_bypass_the_daily_interval_and_failures_are_not_up_to_date() {
+        let home = tempfile::tempdir().unwrap();
+        save_preferences(
+            home.path(),
+            &Preferences {
+                last_check: now(),
+                ..Preferences::default()
+            },
+        )
+        .unwrap();
+        for enabled in [false, true] {
+            let mut s = State {
+                enabled,
+                ..State::default()
+            };
+            assert!(s.begin_check(home.path(), false).is_none());
+            assert!(s.begin_check(home.path(), true).is_some());
+            let info = s.info.as_ref().unwrap();
+            assert_eq!(info.status, "checking");
+            assert_eq!(info.update_check_enabled, enabled);
+            publish(
+                &mut s,
+                "error",
+                Some("Check your connection and try again.".into()),
+            );
+            let info = s.info.as_ref().unwrap();
+            assert_eq!(info.status, "error");
+            assert!(!info.has_update);
+            assert_eq!(
+                info.error.as_deref(),
+                Some("Check your connection and try again.")
+            );
+        }
+    }
+
+    #[test]
     fn stable_versions_only_and_never_downgrade() {
-        for (candidate, expected) in [
-            ("v0.2.0", true),
-            ("v0.10.0", true),
-            ("v0.1.0", false),
-            ("v0.0.9", false),
-            ("v0.2.0-beta.1", false),
-            ("garbage", false),
+        for (candidate, current, expected) in [
+            ("v0.2.0", "0.1.0", true),
+            ("v0.10.0", "0.9.0", true),
+            ("v0.1.0", "0.1.0", false),
+            ("v0.0.9", "0.1.0", false),
+            ("0.1.0", "0.1.0-beta.1", true),
+            ("v0.2.0-beta.1", "0.1.0", false),
+            ("garbage", "0.1.0", false),
         ] {
-            assert_eq!(newer(candidate, "0.1.0"), expected, "{candidate}");
+            assert_eq!(
+                newer(candidate, current),
+                expected,
+                "{candidate} vs {current}"
+            );
         }
     }
 

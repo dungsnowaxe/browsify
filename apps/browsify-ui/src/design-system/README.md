@@ -12,8 +12,9 @@ are constrained to the available space; the workspace scrolls internally and the
 navigation remains available. This does not create or resize a native window:
 Browsify keeps the on-demand browser UI from ADR 0002.
 
-The compact labeled rail links to Overview, Rules, Test URL, Activity, Settings
-and About. Settings owns the browser/profile selector and app behavior toggles.
+The Browsify logo opens Home. The compact labeled rail links to Rules, Test URL,
+Activity, Settings and About; Home does not duplicate these navigation links.
+Settings owns the browser/profile selector and app behavior toggles.
 
 ## Boundaries
 
@@ -28,15 +29,26 @@ and About. Settings owns the browser/profile selector and app behavior toggles.
 
 ## Data and interactions
 
-Overview uses live configuration counts, installed browsers and browser targets.
+Home uses live routing counts, verified installed browsers and browser targets.
 The setup meter has two actual checks: default link-handler registration and a
 default browser target. Handler rules are optional, not a setup quota. There are
 no invented activity charts, time filters or AI capabilities.
 
-`UrlTester.svelte` serves both Overview and the full tester. Tests explicitly
+`UrlTester.svelte` serves both Home and the full tester. Tests explicitly
 submit to the existing `testUrl` RPC, never open a URL, and display loading,
-validation, backend errors and connection failures. Primary Config keeps managed
-settings locked. Editing handler rules preserves the saved app behavior options.
+validation, backend errors and connection failures.
+
+Settings Overrides take priority over baseline preferences without rewriting the
+Primary Config or changing Handler Rule priority. They are saved next to the UI
+Rules File: `rules.json` uses `rules.settings.json`, including for custom rules
+paths. Only edited preferences are overridden. “Reset to defaults” removes all
+Settings Overrides, restoring underlying preferences. Existing UI Rules File
+preferences remain baseline values; editing Handler Rules preserves them.
+
+Automatic updates mean release checks only, never automatic installation. The
+manual check action appears only with automatic checks off, bypasses the daily
+cache, and reports network failures rather than claiming the app is up to date.
+Configuration paths and runtime details are not displayed in the interface.
 
 Run `npm run check`, `npm run test` (Node 22.6+), and `npm run build` from
 `apps/browsify-ui`.

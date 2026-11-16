@@ -212,6 +212,32 @@ pub fn is_default_browser() -> bool {
     }
 }
 
+pub fn refresh_preferences() {
+    #[cfg(target_os = "macos")]
+    macos_impl::schedule_preferences_refresh();
+}
+
+/// Finds known browsers registered with LaunchServices, including nonstandard install locations.
+pub fn installed_browser_names(resolver: &ProfileResolver) -> Vec<&'static str> {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = resolver;
+        browsify_core::BROWSERS_REGISTRY
+            .iter()
+            .filter(|browser| macos_impl::installed_application(browser.id))
+            .map(|browser| browser.app_name)
+            .collect()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        resolver
+            .list_installed_browsers()
+            .iter()
+            .map(|browser| browser.app_name)
+            .collect()
+    }
+}
+
 /// Requests macOS LaunchServices to set `Browsify.app` as the default handler for `http` and `https`.
 pub fn set_as_default_browser() -> bool {
     #[cfg(target_os = "macos")]
@@ -285,11 +311,12 @@ pub fn run_daemon(
                 if let Ok(mut eng) = engine.lock() {
                     match eng.reload() {
                         Ok(()) => {
-                            log_event(LogLevel::Info, "Configuration hot-reloaded from disk");
+                            log_event(LogLevel::Info, "Routing settings reloaded");
                             notify_config_reloaded(&eng);
                         }
                         Err(err) => {
-                            log_event(LogLevel::Error, format!("Config reload failed: {}", err));
+                            eprintln!("Config reload failed: {err}");
+                            log_event(LogLevel::Error, "Could not reload routing settings. Check your rules and try again.");
                         }
                     }
                 }
@@ -384,16 +411,19 @@ pub fn handle_daemon_url_event(
         return;
     }
     touch_daemon_activity();
-    log_event(LogLevel::Info, format!("Routing URL: {}", raw_url));
-    let (resolved_res, missing_policy) = {
+    let (resolved_res, missing_policy, log_requests) = {
         let Ok(eng) = engine.lock() else {
             return;
         };
         (
             eng.resolve(raw_url, opener.as_ref(), open_in_background),
             eng.summary().options.on_missing_profile,
+            eng.summary().options.log_requests,
         )
     };
+    if log_requests {
+        log_event(LogLevel::Info, format!("Routing URL: {}", raw_url));
+    }
 
     match resolved_res {
         Ok(cfg) => {
@@ -407,7 +437,11 @@ pub fn handle_daemon_url_event(
             }
         }
         Err(err) => {
-            log_event(LogLevel::Error, format!("Failed evaluating URL: {}", err));
+            eprintln!("Failed evaluating URL: {err}");
+            log_event(
+                LogLevel::Error,
+                "Could not route this link. Check your rules and try again.",
+            );
         }
     }
 }
@@ -706,6 +740,26 @@ mod macos_impl {
         }
     }
 
+    pub fn installed_application(bundle_id: &str) -> bool {
+        unsafe {
+            let object: unsafe extern "C" fn(Id, Sel) -> Id =
+                std::mem::transmute(objc_msgSend as *const c_void);
+            let lookup: unsafe extern "C" fn(Id, Sel, Id) -> Id =
+                std::mem::transmute(objc_msgSend as *const c_void);
+            let workspace = object(cls("NSWorkspace"), sel("sharedWorkspace"));
+            let url = lookup(
+                workspace,
+                sel("URLForApplicationWithBundleIdentifier:"),
+                nsstring(bundle_id),
+            );
+            if url.is_null() {
+                return false;
+            }
+            nsstring_to_rust(object(url, sel("path")))
+                .is_some_and(|path| std::path::Path::new(&path).is_dir())
+        }
+    }
+
     pub fn check_is_default_browser() -> bool {
         unsafe {
             let ws_fn: unsafe extern "C" fn(Class, Sel) -> Id =
@@ -995,11 +1049,12 @@ mod macos_impl {
             if let Ok(mut eng) = ctx.engine.lock() {
                 match eng.reload() {
                     Ok(()) => {
-                        log_event(LogLevel::Info, "Configuration reloaded via menu bar");
+                        log_event(LogLevel::Info, "Routing settings reloaded");
                         notify_config_reloaded(&eng);
                     }
                     Err(e) => {
-                        log_event(LogLevel::Error, format!("Reload error: {}", e));
+                        eprintln!("Reload error: {e}");
+                        log_event(LogLevel::Error, "Could not reload routing settings. Check your rules and try again.");
                     }
                 }
             }
@@ -1036,19 +1091,56 @@ mod macos_impl {
         if std::env::var_os("BROWSIFY_UPDATE_RESTART").is_none() && !check_is_default_browser() {
             let _ = request_set_default_browser();
         }
+        create_status_item(_self);
+        apply_preferences(_self, _cmd, _notif);
         crate::update::acknowledge_startup();
         crate::update::resume_links(&ctx.engine, &ctx.resolver, ctx.dry_run);
-        let hide_icon = ctx
-            .engine
-            .lock()
-            .map(|e| e.summary().options.hide_icon)
-            .unwrap_or(false);
-        if !hide_icon {
-            create_status_item(_self);
-        }
         if ctx.force_window {
             spawn_or_open_ui_server(Arc::clone(&ctx.engine), Arc::clone(&ctx.resolver));
         }
+    }
+
+    pub fn schedule_preferences_refresh() {
+        if DAEMON_CTX.get().is_none() {
+            return;
+        }
+        unsafe {
+            let object: unsafe extern "C" fn(Id, Sel) -> Id =
+                std::mem::transmute(objc_msgSend as *const c_void);
+            let perform: unsafe extern "C" fn(Id, Sel, Sel, Id, bool) =
+                std::mem::transmute(objc_msgSend as *const c_void);
+            let app = object(cls("NSApplication"), sel("sharedApplication"));
+            let delegate = object(app, sel("delegate"));
+            if !delegate.is_null() {
+                perform(
+                    delegate,
+                    sel("performSelectorOnMainThread:withObject:waitUntilDone:"),
+                    sel("refreshPreferences:"),
+                    ptr::null_mut(),
+                    false,
+                );
+            }
+        }
+    }
+
+    extern "C" fn apply_preferences(_self: Id, _cmd: Sel, _sender: Id) {
+        let Some(ctx) = DAEMON_CTX.get() else {
+            return;
+        };
+        let visible = ctx
+            .engine
+            .lock()
+            .map(|e| !e.summary().options.hide_icon)
+            .unwrap_or(true);
+        let item = ctx.status_item.lock().map(|item| *item).unwrap_or(0) as Id;
+        if !item.is_null() {
+            unsafe {
+                let set_visible: unsafe extern "C" fn(Id, Sel, bool) =
+                    std::mem::transmute(objc_msgSend as *const c_void);
+                set_visible(item, sel("setVisible:"), visible);
+            }
+        }
+        rebuild_status_menu();
     }
 
     fn create_status_item(delegate: Id) {
@@ -1188,14 +1280,14 @@ mod macos_impl {
             let _ = add_item_fn(
                 menu,
                 sel("addItemWithTitle:action:keyEquivalent:"),
-                nsstring("Edit Config…"),
+                nsstring("Edit Advanced Rules…"),
                 sel("editConfigAction:"),
                 nsstring("e"),
             );
             let _ = add_item_fn(
                 menu,
                 sel("addItemWithTitle:action:keyEquivalent:"),
-                nsstring("Reload Config"),
+                nsstring("Reload Settings"),
                 sel("reloadConfigAction:"),
                 nsstring("r"),
             );
@@ -1294,6 +1386,12 @@ mod macos_impl {
                     delegate_cls,
                     sel("editConfigAction:"),
                     edit_config_action as Imp,
+                    c"v@:@".as_ptr(),
+                );
+                class_addMethod(
+                    delegate_cls,
+                    sel("refreshPreferences:"),
+                    apply_preferences as Imp,
                     c"v@:@".as_ptr(),
                 );
                 class_addMethod(

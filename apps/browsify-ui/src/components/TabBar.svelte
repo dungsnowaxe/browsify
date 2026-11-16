@@ -5,7 +5,6 @@
   import LogsIcon from "./icons/Logs.svelte";
   import AboutIcon from "./icons/About.svelte";
   import RulesIcon from "./icons/Rules.svelte";
-  import DashboardIcon from "./icons/Dashboard.svelte";
   import { nav } from "../design-system/navigation";
   import { attrs } from "../design-system/styles";
 
@@ -13,7 +12,6 @@
   export let onNavigate: () => void = () => {};
 
   const tabs = [
-    { path: "/", label: "Overview", component: DashboardIcon },
     { path: "/rules", label: "Rules", component: RulesIcon },
     { path: "/test", label: "Test URL", component: TestIcon },
     { path: "/troubleshoot", label: "Activity", showErrors: true, component: LogsIcon },
@@ -23,17 +21,14 @@
 </script>
 
 <aside {...attrs(nav.rail)}>
-  <Link to="/" aria-label="Browsify overview" on:click={onNavigate}>
+  <Link to="/" aria-label="Browsify home" on:click={onNavigate}>
     <span {...attrs(nav.brand)}>
-      <svg width="25" height="25" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M5 18 18 5M8 5h10v10" />
-        <path d="M5 11v7h7" />
-      </svg>
+      <img src="/browsify-icon.svg" width="44" height="44" alt="" />
     </span>
   </Link>
   <nav {...attrs(nav.list)} aria-label="Main navigation">
     {#each tabs as tab, i}
-      {#if i === 4}<div {...attrs(nav.spacer)}></div>{/if}
+      {#if i === 3}<div {...attrs(nav.spacer)}></div>{/if}
       <Link to={tab.path} on:click={onNavigate} let:active>
         <span {...attrs(nav.item, active && nav.active)}>
           <span {...attrs(nav.icon, active && nav.activeIcon)} aria-hidden="true">
