@@ -12,10 +12,11 @@ if [ -n "${RELEASE_TAG:-}" ] && [ "${RELEASE_TAG}" != "v${VERSION}" ]; then
     exit 1
 fi
 
-# Unsigned personal build. Developer ID signing and notarization are deferred.
+# Apple Developer ID signing and notarization are deferred.
+# GitHub release builds embed BROWSIFY_UPDATE_PUBLIC_KEY; the publish job signs the archive.
 BUILD_UNIVERSAL=1 ./scripts/build.sh
 mkdir -p dist
-tar -czf dist/Browsify-universal.tar.gz -C apps/browsify/build Browsify.app
+COPYFILE_DISABLE=1 tar -czf dist/Browsify-universal.tar.gz -C apps/browsify/build Browsify.app
 (
     cd dist
     shasum -a 256 Browsify-universal.tar.gz > SHA256SUMS

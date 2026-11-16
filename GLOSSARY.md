@@ -39,3 +39,17 @@ _Avoid_: Profile flag, profile ID
 **Launch Plan**:
 The concrete execution plan produced by resolving a Browser Target and its Profile Selector into final launch arguments, target URL, instance-spawning behavior, and window activation policy.
 _Avoid_: Launch config, open command
+
+### Browsify Updates
+
+**Automatic Updates**:
+Browsify's opt-out background discovery and download of new releases, with installation requiring explicit restart approval.
+_Avoid_: Automatic installation, update checks
+
+**Skipped Release**:
+A Browsify release the user has chosen to exclude from automatic update prompts and downloads, but which remains discoverable through a manual check.
+_Avoid_: Dismissed update, deferred update
+
+**Deferred Update**:
+An available Browsify update whose next automatic prompt the user has postponed for 24 hours without skipping the release.
+_Avoid_: Skipped release

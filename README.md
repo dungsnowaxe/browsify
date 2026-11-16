@@ -3,7 +3,7 @@
   <h1>Browsify</h1>
   <p><strong>Always open the right browser &amp; profile — in ~5 MB RAM and 2.3 µs.</strong></p>
   <p>
-    <a href="https://github.com/snowaxe/browsify/releases"><img src="https://img.shields.io/badge/macOS-12%2B-blue?style=flat-square&logo=apple&logoColor=white" alt="macOS 12+"></a>
+    <a href="https://github.com/dungsnowaxe/browsify/releases"><img src="https://img.shields.io/badge/macOS-12%2B-blue?style=flat-square&logo=apple&logoColor=white" alt="macOS 12+"></a>
     <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/built_with-Rust_2021-DEA584?style=flat-square&logo=rust&logoColor=white" alt="Rust 2021"></a>
     <img src="https://img.shields.io/badge/memory-~5_MB_RSS-brightgreen?style=flat-square" alt="Memory: ~5 MB RSS">
     <img src="https://img.shields.io/badge/latency-2.3_µs-orange?style=flat-square" alt="Latency: 2.3 µs">
@@ -118,8 +118,11 @@ To publish a stable release:
 
 The Release workflow rejects tags that do not match the Cargo version, runs Rust
 and UI checks/tests, builds for Apple Silicon and Intel (macOS 12+), and publishes
-`Browsify-universal.tar.gz` and `SHA256SUMS` to GitHub Releases. No additional
-secrets are required: publishing uses the workflow's `GITHUB_TOKEN`. The app bundle
+`Browsify-universal.tar.gz`, its detached Ed25519 signature
+`Browsify-universal.tar.gz.sig`, and `SHA256SUMS` to GitHub Releases. Publishing uses
+the workflow's `GITHUB_TOKEN`; signed updates also require the repository variable
+`BROWSIFY_UPDATE_PUBLIC_KEY` and secret `BROWSIFY_UPDATE_PRIVATE_KEY_BASE64`
+(see [update signing](docs/update-signing.md)). The app bundle
 version is stamped from Cargo during each build. Only stable `vX.Y.Z` tags are
 supported. To retry a failed run, rerun it in GitHub Actions; if a release already
 exists, publishing fails rather than overwriting its assets.
@@ -134,16 +137,32 @@ rustup target add aarch64-apple-darwin x86_64-apple-darwin
 (cd dist && shasum -a 256 -c SHA256SUMS)
 ```
 
-Release builds are **unsigned and not notarized**, so Gatekeeper may block them.
+Release builds are **not Apple-signed or notarized**, so Gatekeeper may block initial installation.
 Download and extract the archive, quit Browsify, replace the installed app, then
 relaunch it. Developer ID signing and Apple notarization are not configured yet.
 
 ### Update support
 
-Browsify can check the latest GitHub Release when configuration is loaded or
-updated, with results cached for 24 hours. Enable **Check for updates** in
-Preferences to receive release information and a link to the release page.
-It does **not** download, install, or restart into new versions automatically.
+**Automatic updates** is enabled by default: while Browsify runs, it checks for
+stable releases at most once daily and downloads and verifies signed updates.
+The native ready dialog offers **Skip This Version**, **Later** (remind after
+24 hours), and **Restart to Update**. Installation never happens on ordinary quit.
+Downloaded updates survive quitting; only writable installed app bundles are
+supported, without administrator authorization. Installation keeps the previous
+bundle until the replacement acknowledges startup, with rollback on failure.
+
+Disabling Automatic updates stops background checks, cancels background downloads,
+and discards automatically staged packages. Existing `checkForUpdates: false`
+(JavaScript/UI Rules File) or `check_for_updates = false` (TOML) preferences stay
+off; these compatibility keys now control automatic checks **and** downloads.
+**Check for Updates…** remains available in Preferences and the menu, bypasses the
+daily interval and skipped-release filter, and asks before downloading. Preferences
+also provides release notes, manual downloads, update status, and retry controls.
+
+Check-only installations need a one-time manual upgrade to an updater-enabled
+release. Builds without an embedded verification key cannot install updates;
+there is no unsigned fallback. Update-package signing does not replace Apple
+Developer ID signing or notarization.
 
 ## Credits & License
 

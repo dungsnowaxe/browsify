@@ -59,6 +59,10 @@ pub struct UpdateInfo {
     pub update_check_enabled: bool,
     pub download_url: String,
     pub release_url: String,
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub error: Option<String>,
 }
 
 impl UpdateInfo {
@@ -70,10 +74,12 @@ impl UpdateInfo {
             update_check_enabled: false,
             download_url: String::new(),
             release_url: String::new(),
+            status: "disabled".into(),
+            error: None,
         }
     }
 
-    /// A check ran; the running version is the latest known release (or the check failed).
+    /// A successful check found no newer release.
     pub fn no_update(version: String) -> Self {
         Self {
             version,
@@ -81,6 +87,8 @@ impl UpdateInfo {
             update_check_enabled: true,
             download_url: String::new(),
             release_url: String::new(),
+            status: "upToDate".into(),
+            error: None,
         }
     }
 
@@ -97,6 +105,8 @@ impl UpdateInfo {
             update_check_enabled: true,
             download_url,
             release_url,
+            status: "available".into(),
+            error: None,
         }
     }
 }
@@ -773,6 +783,22 @@ fn handle_rpc(
                 .to_string(),
             }
         }
+        "checkForUpdates" => {
+            crate::update::check_manually(profile_resolver.home_dir());
+            serde_json::json!({"type": "updateAction", "message": "Checking for updates…"})
+                .to_string()
+        }
+        "downloadUpdate" => {
+            crate::update::download(profile_resolver.home_dir(), true);
+            serde_json::json!({"type": "updateAction", "message": "Downloading update…"})
+                .to_string()
+        }
+        "restartToUpdate" => match crate::update::restart(profile_resolver.home_dir()) {
+            Ok(()) => {
+                serde_json::json!({"type": "updateAction", "message": "Restarting…"}).to_string()
+            }
+            Err(error) => serde_json::json!({"type": "updateAction", "message": error}).to_string(),
+        },
         "testUrl" => {
             let url = msg.get("url").and_then(|v| v.as_str()).unwrap_or("");
             let eng = engine.lock().unwrap();

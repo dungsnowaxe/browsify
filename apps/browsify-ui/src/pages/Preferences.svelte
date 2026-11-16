@@ -4,9 +4,10 @@
   import BrowserProfileSelector from "../components/BrowserProfileSelector.svelte";
   import OptionRow from "../components/OptionRow.svelte";
   import LockIcon from "../components/icons/Lock.svelte";
-  import type { ConfigInfo, RulesFile } from "../types";
+  import type { ConfigInfo, RulesFile, UpdateInfo } from "../types";
   import { toast } from "../lib/toast";
 
+  export let updateInfo: UpdateInfo | null = null;
   export let hasConfig: boolean;
   export let config: ConfigInfo;
   export let rulesFile: RulesFile;
@@ -31,7 +32,7 @@
     keepRunning = options?.keepRunning ?? true;
     hideIcon = options?.hideIcon ?? false;
     logRequests = options?.logRequests ?? false;
-    checkForUpdates = options?.checkForUpdates ?? false;
+    checkForUpdates = options?.checkForUpdates ?? true;
     defaultBrowser = primary ? (nextConfig.defaultBrowser ?? "") : nextRules.defaultBrowser || nextConfig.defaultBrowser || "Safari";
     defaultProfile = primary ? "" : nextRules.defaultProfile ?? "";
     defaultBrowserIsCustom = defaultBrowser !== "" && !installedBrowsers.includes(defaultBrowser);
@@ -122,8 +123,24 @@
       <OptionRow label="Keep running" hint="Stay available in the background" bind:checked={keepRunning} locked={hasPrimaryConfig || !hasConfig} onLockedClick={onLockedClick} onchange={scheduleSave} />
       <OptionRow label="Hide menu bar icon" hint="Keep Browsify out of the menu bar" bind:checked={hideIcon} locked={hasPrimaryConfig || !hasConfig} onLockedClick={onLockedClick} onchange={scheduleSave} />
       <OptionRow label="Log URL requests" hint="Write URL handling activity to a log" bind:checked={logRequests} locked={hasPrimaryConfig || !hasConfig} onLockedClick={onLockedClick} onchange={scheduleSave} />
-      <OptionRow label="Check for updates" hint="Check for new Browsify releases" bind:checked={checkForUpdates} locked={hasPrimaryConfig || !hasConfig} onLockedClick={onLockedClick} onchange={scheduleSave} />
+      <OptionRow label="Automatic updates" hint="Check daily and download signed updates. Ask before restarting." bind:checked={checkForUpdates} locked={hasPrimaryConfig || !hasConfig} onLockedClick={onLockedClick} onchange={scheduleSave} />
     </div>
+  </section>
+
+  <section class="browser-card glass-panel" aria-labelledby="updates-heading">
+    <div class="card-heading">
+      <div>
+        <h2 id="updates-heading">Browsify updates</h2>
+        <p aria-live="polite">{updateInfo?.error ?? (updateInfo?.status === "checking" ? "Checking for updates…" : updateInfo?.status === "downloading" ? "Downloading and verifying update…" : updateInfo?.status === "ready" ? `${updateInfo.version} is ready to install.` : updateInfo?.status === "upToDate" ? "You have the latest stable release." : updateInfo?.hasUpdate ? `${updateInfo.version} is available.` : "Manual checks are always available, even with automatic updates off.")}</p>
+      </div>
+      <button class="app-button" type="button" disabled={!hasConfig || updateInfo?.status === "checking" || updateInfo?.status === "downloading"} on:click={() => window.finicky.sendMessage({ type: "checkForUpdates" })}>Check for Updates…</button>
+    </div>
+    {#if updateInfo?.status === "ready"}
+      <button class="app-button" type="button" on:click={() => window.finicky.sendMessage({ type: "restartToUpdate" })}>Restart to Update</button>
+    {:else if updateInfo?.hasUpdate && (updateInfo.status === "available" || updateInfo.status === "skipped" || updateInfo.status === "error")}
+      <button class="app-button" type="button" on:click={() => window.finicky.sendMessage({ type: "downloadUpdate" })}>Download Update</button>
+    {/if}
+    <a href={updateInfo?.releaseUrl || "https://github.com/dungsnowaxe/browsify/releases"} target="_blank" rel="noopener noreferrer">Release notes and manual download ↗</a>
   </section>
 </PageContainer>
 

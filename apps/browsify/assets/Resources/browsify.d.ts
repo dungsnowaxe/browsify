@@ -52,6 +52,7 @@ export interface ConfigOptions {
   keepRunning?: boolean;
   hideIcon?: boolean;
   logRequests?: boolean;
+  /** Automatically check for and download signed updates (default true). Installation requires restart approval. Manual checks remain available when false. */
   checkForUpdates?: boolean;
 }
 

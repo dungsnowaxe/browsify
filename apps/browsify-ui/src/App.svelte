@@ -59,6 +59,9 @@
       case "updateInfo":
         updateInfo = parsedMsg.message;
         break;
+      case "updateAction":
+        toast.show("Browsify updates", "info", parsedMsg.message);
+        break;
       case "testUrlResult":
         receiveUrlTestResult(parsedMsg.message, parsedMsg.requestId);
         break;
@@ -182,6 +185,7 @@
 
               <Route path="/preferences">
                 <Preferences
+                  {updateInfo}
                   {hasConfig}
                   {config}
                   {rulesFile}
@@ -257,7 +261,7 @@
                   : "Hybrid QuickJS"}</span
               >
             {/if}
-            {#if updateInfo && updateInfo.updateCheckEnabled && !updateInfo.hasUpdate}
+            {#if updateInfo?.status === "upToDate"}
               <span class="up-to-date">Up to date</span>
             {/if}
             <span class="version">{version}</span>
