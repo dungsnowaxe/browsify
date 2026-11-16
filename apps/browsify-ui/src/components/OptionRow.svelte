@@ -4,7 +4,7 @@
   import Toggle from "./Toggle.svelte";
   import { attrs, ui } from "../design-system/styles";
 
-  const LOCKED_TOOLTIP = "Primary config is active — these settings can't be changed here";
+  const LOCKED_TOOLTIP = "Open Browsify to connect and change this setting.";
 
   let {
     label,

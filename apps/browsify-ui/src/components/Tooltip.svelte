@@ -58,6 +58,8 @@
     right: 0;
     pointer-events: none;
     white-space: normal;
+    width: max-content;
+    max-width: min(220px, calc(100vw - 64px));
   }
 
   .tooltip-anchor:hover .tooltip-text,

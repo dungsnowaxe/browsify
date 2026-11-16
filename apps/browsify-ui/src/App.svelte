@@ -1,6 +1,7 @@
 <script lang="ts">
   import { attrs, materials } from "./design-system/styles";
-  import { Router, Route, Link } from "svelte-routing";
+  import { Router, Route } from "svelte-routing";
+  import { onDestroy } from "svelte";
   import LogViewer from "./pages/LogViewer.svelte";
   import StartPage from "./pages/StartPage.svelte";
   import Preferences from "./pages/Preferences.svelte";
@@ -14,16 +15,11 @@
   import { receiveUrlTestResult } from "./lib/testUrlStore";
   import { toast } from "./lib/toast";
 
-  function basename(path: string): string {
-    return path.split("/").pop() || path;
-  }
-
-  function showPathToast(label: string, description: string, path: string) {
-    toast.show(label, "info", `${description}\n${path}`, 5000);
-  }
-
   let version = "v0.0.0";
-  let buildInfo = "dev";
+  let settingsSaveState: "idle" | "saving" | "saved" | "error" = "idle";
+  let updateChecking = false;
+  let pendingSettings = 0;
+  let settingsQueue = Promise.resolve();
 
   let scrollArea: HTMLDivElement;
   let hasConfig = false;
@@ -33,8 +29,6 @@
   let rulesFile: RulesFile = { defaultBrowser: "", rules: [] };
   let installedBrowsers: string[] = [];
   let profilesByBrowser: Record<string, string[]> = {};
-
-  $: configPaths = [...new Set([config.configPath, rulesFile.path].filter((path): path is string => !!path))];
 
   $: numErrors = messageBuffer.filter(
     (msg) => msg.level.toLowerCase() === "error"
@@ -48,7 +42,17 @@
         version = parsedMsg.message;
         break;
       case "buildInfo":
-        buildInfo = parsedMsg.message;
+        break;
+      case "settingsSaved":
+        settingsSaveState = pendingSettings > 0 ? "saving" : "saved";
+        break;
+      case "saveSettingsError":
+        settingsSaveState = "error";
+        toast.show("Could not save settings", "error", "Your changes were not applied. Try again.");
+        break;
+      case "updateCheckError":
+        updateChecking = false;
+        toast.show("Could not check for updates", "error", parsedMsg.message?.error);
         break;
       case "config":
         hasConfig = true;
@@ -58,6 +62,7 @@
         break;
       case "updateInfo":
         updateInfo = parsedMsg.message;
+        if (window.webkit?.messageHandlers?.finicky) updateChecking = false;
         break;
       case "testUrlResult":
         receiveUrlTestResult(parsedMsg.message, parsedMsg.requestId);
@@ -76,9 +81,9 @@
         break;
       case "saveRulesError":
         toast.show(
-          "Failed to save rules",
+          "Could not update rules",
           "error",
-          parsedMsg.message?.error ?? "Unknown error"
+          "Could not apply your rules. Check them and try again."
         );
         break;
       default: {
@@ -105,11 +110,14 @@
 
   window.finicky = {
     sendMessage: (msg: any) => {
+      if (msg.type === "checkForUpdates") { updateChecking = true; updateInfo = null; }
       if (window.webkit?.messageHandlers?.finicky) {
         window.webkit.messageHandlers.finicky.postMessage(JSON.stringify(msg));
       } else {
         const token = getSessionToken();
-        fetch(`/api/rpc?token=${encodeURIComponent(token)}`, {
+        const savingSettings = msg.type === "saveSettings";
+        if (savingSettings) { pendingSettings++; settingsSaveState = "saving"; }
+        const request = () => fetch(`/api/rpc?token=${encodeURIComponent(token)}`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -117,20 +125,37 @@
           },
           body: JSON.stringify(msg),
         })
-          .then((res) => res.json())
+          .then((res) => {
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            return res.json();
+          })
           .then((replies) => {
-            if (Array.isArray(replies)) {
-              for (const r of replies) handleMessage(r);
-            } else if (replies) {
-              handleMessage(replies);
+            const messages = Array.isArray(replies) ? replies : [replies];
+            if (savingSettings && !messages.some((reply) => reply?.type === "settingsSaved" || reply?.type === "saveSettingsError")) {
+              throw new Error("Browsify did not acknowledge the settings change");
             }
+            if (msg.type === "checkForUpdates" && !messages.some((reply) => reply?.type === "updateInfo" || reply?.type === "updateCheckError")) {
+              throw new Error("Browsify did not return an update result");
+            }
+            for (const reply of messages) if (reply) handleMessage(reply);
           })
           .catch((err) => {
             console.error("Browsify RPC error:", err);
             if (msg.type === "testUrl") {
               receiveUrlTestResult({ error: "Could not reach Browsify. Check the app is running, then try again." }, msg.requestId);
+            } else if (savingSettings) {
+              settingsSaveState = "error";
+              toast.show("Could not save settings", "error", "Check that Browsify is running. If you just updated it, restart the app and try again.");
+            } else if (msg.type === "checkForUpdates") {
+              updateChecking = false;
+              toast.show("Could not check for updates", "error", "Check that Browsify is running, then try again.");
             }
+          }).finally(() => {
+            if (msg.type === "checkForUpdates") updateChecking = false;
+            if (savingSettings && --pendingSettings === 0 && settingsSaveState !== "error") settingsSaveState = "saved";
           });
+        if (savingSettings) settingsQueue = settingsQueue.then(request);
+        else void request();
       }
     },
     receiveMessage: handleMessage,
@@ -147,6 +172,7 @@
       const es = new EventSource(
         `/api/events?token=${encodeURIComponent(token)}`
       );
+      onDestroy(() => es.close());
       es.onmessage = (ev) => {
         try {
           handleMessage(JSON.parse(ev.data));
@@ -184,10 +210,11 @@
                 <Preferences
                   {hasConfig}
                   {config}
-                  {rulesFile}
                   {installedBrowsers}
                   {profilesByBrowser}
-                  hasPrimaryConfig={config.hasPrimaryConfig ?? false}
+                  {settingsSaveState}
+                  {updateInfo}
+                  {updateChecking}
                 />
               </Route>
 
@@ -215,48 +242,8 @@
           </div>
           <div class="footer">
             <span class="connection" class:connected={hasConfig} aria-label={hasConfig ? "Connected to Browsify" : "Connecting to Browsify"}></span>
-            {#if config.configPath || rulesFile.path}
-              <span class="config-label">Config</span>
-              <button class="config-summary" type="button" aria-label={`View ${configPaths.length} configuration ${configPaths.length === 1 ? "file" : "files"}`} on:click={() => toast.show("Configuration files", "info", configPaths.join("\n"), 5000)}>{configPaths.length} config {configPaths.length === 1 ? "file" : "files"}</button>
-              {#if config.configPath}
-                <button
-                  class="config-badge"
-                  on:click={() =>
-                    showPathToast(
-                      basename(config.configPath),
-                      "Configuration loaded from",
-                      config.configPath
-                    )}
-                >
-                  {basename(config.configPath)}
-                </button>
-              {/if}
-              {#if rulesFile.path && rulesFile.path !== config.configPath}
-                <button
-                  class="config-badge"
-                  on:click={() =>
-                    showPathToast(
-                      basename(rulesFile.path!),
-                      "Configuration loaded from",
-                      rulesFile.path!
-                    )}
-                >
-                  {basename(rulesFile.path)}
-                </button>
-              {/if}
-            {:else}
-              <span class="config-status">{hasConfig ? "Using default settings" : "Connecting to Browsify…"}</span>
-              {#if hasConfig}<Link to="/preferences" class="config-link">Open settings</Link>{/if}
-            {/if}
             <span class="spacer"></span>
             <AppearanceMenu />
-            {#if config.format}
-              <span class="version"
-                >{config.pureNativeFastPath
-                  ? "Native Fast Path"
-                  : "Hybrid QuickJS"}</span
-              >
-            {/if}
             {#if updateInfo && updateInfo.updateCheckEnabled && !updateInfo.hasUpdate}
               <span class="up-to-date">Up to date</span>
             {/if}
@@ -359,47 +346,6 @@
     font-size: 13px;
   }
 
-  .config-label { color: var(--text-secondary); font-size: 13px; }
-
-  .config-summary { display: none; }
-
-  .config-badge {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    font-size: 13px;
-    padding: 6px 10px;
-    border-radius: 999px;
-    background: var(--browsify-inset);
-    border: 1px solid var(--browsify-border);
-    color: var(--text-secondary);
-    cursor: pointer;
-    white-space: nowrap;
-    min-width: 0;
-    max-width: 180px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    transition: background 0.15s ease, color 0.15s ease;
-  }
-
-  .config-badge:hover {
-    background: var(--button-hover);
-    color: var(--text-primary);
-  }
-
-  .config-status { font-size: 13px; color: var(--text-secondary); }
-
-  .config-link {
-    color: var(--accent-color);
-    font-size: 13px;
-    text-decoration: none;
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-  }
-
-  .config-link:hover {
-    text-decoration: underline;
-  }
-
   @media (max-width: 700px) {
     .app-shell { padding: 8px; }
     .app-frame {
@@ -412,10 +358,6 @@
     .workspace { padding-right: 4px; }
     .container { padding-top: 16px; }
     .footer { gap: 6px; padding: 8px 0; }
-    .footer .version, .up-to-date, .config-label { display: none; }
-    .config-badge { display: none; }
-    .config-summary { display: inline-flex; align-items: center; min-height: 44px; border: 0; border-radius: 999px; padding: 8px 12px; background: var(--browsify-inset); color: var(--text-secondary); font-size: 13px; cursor: pointer; }
-    .config-summary:hover { color: var(--text-primary); }
-    .spacer { display: none; }
+    .footer .version, .up-to-date { display: none; }
   }
 </style>

@@ -70,7 +70,10 @@ body {
 button, input, select, textarea { font: inherit; }
 button, a, input, select { -webkit-tap-highlight-color: transparent; }
 button:not(:disabled), a { touch-action: manipulation; }
-a { color: var(--browsify-link); }
+/* Keep the default link color below StyleX component styles in the cascade. */
+@layer reset {
+  a { color: var(--browsify-link); }
+}
 
 :focus-visible {
   outline: 2px solid var(--browsify-link);

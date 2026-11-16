@@ -22,8 +22,7 @@
       <span class="version">Version {version}</span>
     </div>
     <p>
-      Drop-in Finicky v3/v4 compatibility with a hybrid native + QuickJS pipeline
-      and zero idle UI RAM.
+      Open links in the right browser and profile, with routing rules you control.
     </p>
     <a
       href="https://github.com/snowaxe/browsify"
@@ -38,7 +37,7 @@
   <section class={`credits ${attrs(materials.glassPanel).class ?? ""}`} style={attrs(materials.glassPanel).style} data-glass>
     <h2>Credits &amp; attribution</h2>
     <p>
-      Rust rewrite &amp; hybrid architecture by
+      Browsify development by
       <a href="https://github.com/snowaxe" target="_blank" rel="noopener noreferrer"
         >@snowaxe</a
       >
@@ -54,10 +53,7 @@
       (MIT License)
     </p>
     <p>
-      Icon designed by
-      <a href="https://github.com/uetchy" target="_blank" rel="noopener noreferrer"
-        >@uetchy</a
-      >
+      Logo and visual identity redesigned for Browsify.
     </p>
     <p class="asset-credits">Sora and Figtree are licensed under the SIL Open Font License. Browser marks via SVG Logos (CC0). Product names and logos are trademarks of their owners.</p>
   </section>
@@ -119,12 +115,12 @@
     margin: 0 0 4px;
   }
 
-  a {
-    color: var(--accent-color);
+  .credits a {
+    color: var(--browsify-link);
     text-decoration: none;
   }
 
-  a:hover {
-    opacity: 0.85;
+  .credits a:hover {
+    text-decoration: underline;
   }
 </style>

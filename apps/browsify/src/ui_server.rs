@@ -1,4 +1,4 @@
-use crate::config_loader::BrowsifyEngine;
+use crate::config_loader::{BrowsifyEngine, SettingsOverrides};
 use browsify_core::{ProfileResolver, RulesFile};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
@@ -68,17 +68,6 @@ impl UpdateInfo {
             version: String::new(),
             has_update: false,
             update_check_enabled: false,
-            download_url: String::new(),
-            release_url: String::new(),
-        }
-    }
-
-    /// A check ran; the running version is the latest known release (or the check failed).
-    pub fn no_update(version: String) -> Self {
-        Self {
-            version,
-            has_update: false,
-            update_check_enabled: true,
             download_url: String::new(),
             release_url: String::new(),
         }
@@ -199,6 +188,7 @@ pub fn is_ui_server_active() -> bool {
 }
 
 pub fn notify_config_reloaded(engine: &BrowsifyEngine) {
+    crate::macos::refresh_preferences();
     let msg = build_config_message(engine);
     let payload = sse_event("config", msg);
     if let Ok(mut guard) = telemetry().lock() {
@@ -638,6 +628,9 @@ fn build_config_message(eng: &BrowsifyEngine) -> serde_json::Value {
         "handlers": sum.handlers_count,
         "rewrites": sum.rewrites_count,
         "defaultBrowser": sum.default_browser,
+        "defaultProfile": sum.default_profile,
+        "defaultBrowserIsDynamic": sum.default_browser_is_dynamic,
+        "settingsOverrides": eng.settings(),
         "configPath": cfg_path,
         "hasPrimaryConfig": sum.has_primary_config,
         "explicitDefaultBrowser": sum.explicit_default_browser,
@@ -686,6 +679,40 @@ fn handle_rpc(
                 }
             }
             serde_json::Value::Array(events).to_string()
+        }
+        "saveSettings" => {
+            let result = msg
+                .get("payload")
+                .ok_or_else(|| "Missing settings".to_string())
+                .and_then(|value| {
+                    serde_json::from_value::<SettingsOverrides>(value.clone())
+                        .map_err(|e| e.to_string())
+                })
+                .and_then(|settings| {
+                    let mut eng = engine.lock().unwrap();
+                    eng.save_settings(settings)?;
+                    Ok(serde_json::json!([
+                        event_value("config", build_config_message(&eng)),
+                        event_value("settingsSaved", serde_json::Value::Null)
+                    ]))
+                });
+            match result {
+                Ok(reply) => {
+                    notify_config_reloaded(&engine.lock().unwrap());
+                    crate::update::trigger_update_check_if_enabled(
+                        engine,
+                        profile_resolver.home_dir(),
+                    );
+                    reply.to_string()
+                }
+                Err(error) => {
+                    serde_json::json!({"type":"saveSettingsError", "message":{"error":error}})
+                        .to_string()
+                }
+            }
+        }
+        "checkForUpdates" => {
+            crate::update::manual_update_check(profile_resolver.home_dir()).to_string()
         }
         "getRules" => {
             let rules_path = engine.lock().unwrap().rules_path();
@@ -737,7 +764,9 @@ fn handle_rpc(
                         })
                         .to_string();
                     }
-                    eng.update_rules(&rf);
+                    if let Err(error) = eng.reload() {
+                        return serde_json::json!({"type":"saveRulesError", "message":{"error":error}}).to_string();
+                    }
                     let resp = serde_json::json!([
                         {
                             "type": "rules",
@@ -756,10 +785,7 @@ fn handle_rpc(
                     ])
                     .to_string();
                     drop(eng);
-                    log_event(
-                        LogLevel::Info,
-                        format!("Saved {} rules to {}", rf.rules.len(), rules_path.display()),
-                    );
+                    log_event(LogLevel::Info, format!("Saved {} rules", rf.rules.len()));
                     crate::update::trigger_update_check_if_enabled(
                         engine,
                         profile_resolver.home_dir(),
@@ -815,11 +841,7 @@ fn handle_rpc(
             }
         }
         "getInstalledBrowsers" => {
-            let names: Vec<&str> = profile_resolver
-                .list_installed_browsers()
-                .into_iter()
-                .map(|b| b.app_name)
-                .collect();
+            let names = crate::macos::installed_browser_names(profile_resolver);
             serde_json::json!({
                 "type": "installedBrowsers",
                 "message": names
@@ -970,6 +992,110 @@ const FALLBACK_SPA_HTML: &str = r#"<!DOCTYPE html>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn settings_rpc_persists_preferences_and_preserves_routing_files() {
+        let root = std::env::temp_dir().join(format!(
+            "browsify-settings-rpc-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).unwrap();
+        let primary = root.join("config.js");
+        let source = "export default {defaultBrowser: 'Safari', options: {hideIcon: true, logRequests: true}};";
+        fs::write(&primary, source).unwrap();
+        let resolver = Arc::new(ProfileResolver::new(&root));
+        for custom in [false, true] {
+            let rules = if custom {
+                root.join("custom/rules.json")
+            } else {
+                RulesFile::default_path(&root)
+            };
+            fs::create_dir_all(rules.parent().unwrap()).unwrap();
+            fs::write(&rules, r#"{"defaultBrowser":"Google Chrome","rules":[]}"#).unwrap();
+            let original = fs::read(&rules).unwrap();
+            let eng = Arc::new(Mutex::new(
+                BrowsifyEngine::load(
+                    &root,
+                    Some(&primary),
+                    custom.then_some(rules.as_path()),
+                    false,
+                )
+                .unwrap(),
+            ));
+            let rpc = |message: serde_json::Value| -> serde_json::Value {
+                serde_json::from_str(&handle_rpc(&message.to_string(), &eng, &resolver)).unwrap()
+            };
+            let saved = rpc(serde_json::json!({"type":"saveSettings", "payload":{
+                "defaultBrowser":"Firefox", "defaultProfile":"container:Work",
+                "options":{"keepRunning":false,"hideIcon":false,"checkForUpdates":false}
+            }}));
+            let config = &saved
+                .as_array()
+                .expect("settings response")
+                .iter()
+                .find(|event| event["type"] == "config")
+                .unwrap()["message"];
+            assert_eq!(config["defaultBrowser"], "Firefox");
+            assert_eq!(config["options"]["hideIcon"], false);
+            assert_eq!(config["options"]["logRequests"], true);
+            let logged_url = format!(
+                "https://logging.test/{custom}/{}/enabled",
+                root.file_name().unwrap().to_string_lossy()
+            );
+            crate::macos::handle_daemon_url_event(&eng, &resolver, &logged_url, None, false, true);
+            assert!(telemetry()
+                .lock()
+                .unwrap()
+                .logs
+                .iter()
+                .any(|entry| entry.msg.contains(&logged_url)));
+            let settings_path = rules.with_extension("settings.json");
+            let settings_bytes = fs::read(&settings_path).unwrap();
+            let settings: serde_json::Value = serde_json::from_slice(&settings_bytes).unwrap();
+            assert_eq!(settings["defaultBrowser"], "Firefox");
+            assert_eq!(fs::read(&rules).unwrap(), original);
+            assert_eq!(
+                rpc(serde_json::json!({"type":"testUrl","url":"https://settings.test"}))["message"]
+                    ["browser"],
+                "Firefox"
+            );
+            // Rules edits must retain effective preferences and the override file.
+            rpc(serde_json::json!({"type":"saveRules","payload":{"rules":[]}}));
+            assert_eq!(eng.lock().unwrap().summary().default_browser, "Firefox");
+            assert_eq!(fs::read(&settings_path).unwrap(), settings_bytes);
+            let rejected =
+                rpc(serde_json::json!({"type":"saveSettings","payload":{"defaultBrowser":""}}));
+            assert_eq!(rejected["type"], "saveSettingsError");
+            assert_eq!(fs::read(&settings_path).unwrap(), settings_bytes);
+            let reset = rpc(serde_json::json!({"type":"saveSettings","payload":{}}));
+            let config = &reset
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|event| event["type"] == "config")
+                .unwrap()["message"];
+            assert_eq!(config["defaultBrowser"], "Safari");
+            assert_eq!(config["options"]["hideIcon"], true);
+            assert_eq!(fs::read_to_string(&primary).unwrap(), source);
+            rpc(
+                serde_json::json!({"type":"saveSettings","payload":{"options":{"logRequests":false}}}),
+            );
+            let private_url = logged_url.replace("/enabled", "/disabled");
+            crate::macos::handle_daemon_url_event(&eng, &resolver, &private_url, None, false, true);
+            assert!(!telemetry()
+                .lock()
+                .unwrap()
+                .logs
+                .iter()
+                .any(|entry| entry.msg.contains(&private_url)));
+            fs::remove_file(settings_path).unwrap();
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn test_session_token_is_128_bit_random_hex() {
