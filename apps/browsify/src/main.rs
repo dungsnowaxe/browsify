@@ -45,9 +45,11 @@ OPTIONS:
 }
 
 fn main() {
-    macos::init_host_hooks();
-
     let args: Vec<String> = env::args().skip(1).collect();
+    if update::run_installer(&args) {
+        return;
+    }
+    macos::init_host_hooks();
     if args.iter().any(|a| a == "-h" || a == "--help" || a == "help") {
         print_usage();
         return;

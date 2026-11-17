@@ -325,9 +325,13 @@ pub fn run_daemon(
 
             if !keep_running
                 && !is_ui_server_active()
+                && !crate::update::is_busy()
                 && daemon_idle_elapsed() >= Duration::from_secs(2)
             {
-                log_event(LogLevel::Info, "Exiting daemon (keepRunning is false and idle timeout elapsed)");
+                log_event(
+                    LogLevel::Info,
+                    "Exiting daemon (keepRunning is false and idle timeout elapsed)",
+                );
                 #[cfg(target_os = "macos")]
                 macos_impl::terminate_nsapp();
                 #[cfg(not(target_os = "macos"))]
@@ -342,7 +346,7 @@ pub fn run_daemon(
         let engine = Arc::clone(&engine);
         let home_dir = home_dir.clone();
         thread::spawn(move || loop {
-            thread::sleep(Duration::from_secs(86_400));
+            thread::sleep(Duration::from_secs(3600));
             crate::update::trigger_update_check_if_enabled(&engine, &home_dir);
         });
     }
@@ -370,6 +374,23 @@ pub fn run_daemon(
     }
 }
 
+pub fn is_update_host_ready() -> bool {
+    #[cfg(target_os = "macos")]
+    { macos_impl::is_update_host_ready() }
+    #[cfg(not(target_os = "macos"))]
+    { false }
+}
+
+pub fn request_update_exit() {
+    #[cfg(target_os = "macos")]
+    macos_impl::request_update_exit();
+}
+
+pub fn resume_update_links() {
+    #[cfg(target_os = "macos")]
+    macos_impl::resume_update_links();
+}
+
 /// Routes a URL received by the daemon (via `kAEGetURL`, `openFile:`, Handoff, or SSO).
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub fn handle_daemon_url_event(
@@ -380,6 +401,15 @@ pub fn handle_daemon_url_event(
     open_in_background: bool,
     dry_run: bool,
 ) {
+    let _routing = crate::update::ROUTING.lock().unwrap();
+    if crate::update::queue_during_restart(
+        resolver.home_dir(),
+        raw_url,
+        &opener,
+        open_in_background,
+    ) {
+        return;
+    }
     touch_daemon_activity();
     let (resolved_res, missing_policy, log_requests) = {
         let Ok(eng) = engine.lock() else {
@@ -501,6 +531,32 @@ mod macos_impl {
         } else {
             Some(unsafe { CStr::from_ptr(ptr).to_string_lossy().into_owned() })
         }
+    }
+
+    pub fn resume_update_links() {
+        if let Some(ctx) = DAEMON_CTX.get() {
+            crate::update::resume_links(&ctx.engine, &ctx.resolver, ctx.dry_run);
+        }
+    }
+
+    pub fn is_update_host_ready() -> bool { DAEMON_CTX.get().is_some() }
+
+    pub fn request_update_exit() {
+        unsafe {
+            let get: unsafe extern "C" fn(Id, Sel) -> Id =
+                std::mem::transmute(objc_msgSend as *const c_void);
+            let perform: unsafe extern "C" fn(Id, Sel, Sel, Id, bool) =
+                std::mem::transmute(objc_msgSend as *const c_void);
+            let app = get(cls("NSApplication"), sel("sharedApplication"));
+            let delegate = get(app, sel("delegate"));
+            perform(delegate, sel("performSelectorOnMainThread:withObject:waitUntilDone:"), sel("exitForUpdate:"), ptr::null_mut(), false);
+        }
+    }
+
+    extern "C" fn exit_for_update(_self: Id, _cmd: Sel, _sender: Id) {
+        // Exit on AppKit's thread, never in the middle of an AppleEvent callback.
+        let _routing = crate::update::ROUTING.lock().unwrap();
+        if crate::update::can_exit_for_update() { std::process::exit(0); }
     }
 
     pub fn terminate_nsapp() {
@@ -982,6 +1038,12 @@ mod macos_impl {
         }
     }
 
+    extern "C" fn check_updates_action(_self: Id, _cmd: Sel, _sender: Id) {
+        if let Some(ctx) = DAEMON_CTX.get() {
+            crate::update::check_manually(ctx.resolver.home_dir());
+        }
+    }
+
     extern "C" fn reload_config_action(_self: Id, _cmd: Sel, _sender: Id) {
         if let Some(ctx) = DAEMON_CTX.get() {
             if let Ok(mut eng) = ctx.engine.lock() {
@@ -1025,11 +1087,14 @@ mod macos_impl {
         let Some(ctx) = DAEMON_CTX.get() else {
             return;
         };
-        if !check_is_default_browser() {
+        // An update restart must not change or prompt for default-browser registration.
+        if std::env::var_os("BROWSIFY_UPDATE_RESTART").is_none() && !check_is_default_browser() {
             let _ = request_set_default_browser();
         }
         create_status_item(_self);
         apply_preferences(_self, _cmd, _notif);
+        crate::update::acknowledge_startup();
+        crate::update::resume_links(&ctx.engine, &ctx.resolver, ctx.dry_run);
         if ctx.force_window {
             spawn_or_open_ui_server(Arc::clone(&ctx.engine), Arc::clone(&ctx.resolver));
         }
@@ -1226,6 +1291,13 @@ mod macos_impl {
                 sel("reloadConfigAction:"),
                 nsstring("r"),
             );
+            let _ = add_item_fn(
+                menu,
+                sel("addItemWithTitle:action:keyEquivalent:"),
+                nsstring("Check for Updates…"),
+                sel("checkUpdatesAction:"),
+                nsstring(""),
+            );
 
             let sep = init_fn(cls("NSMenuItem"), sel("separatorItem"));
             add_menu_item(menu, sel("addItem:"), sep);
@@ -1327,6 +1399,15 @@ mod macos_impl {
                     sel("reloadConfigAction:"),
                     reload_config_action as Imp,
                     c"v@:@".as_ptr(),
+                );
+                class_addMethod(
+                    delegate_cls,
+                    sel("checkUpdatesAction:"),
+                    check_updates_action as Imp,
+                    c"v@:@".as_ptr(),
+                );
+                class_addMethod(
+                    delegate_cls, sel("exitForUpdate:"), exit_for_update as Imp, c"v@:@".as_ptr(),
                 );
                 objc_registerClassPair(delegate_cls);
             }

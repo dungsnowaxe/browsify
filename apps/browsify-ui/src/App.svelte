@@ -64,6 +64,9 @@
         updateInfo = parsedMsg.message;
         if (window.webkit?.messageHandlers?.finicky) updateChecking = false;
         break;
+      case "updateAction":
+        toast.show("Browsify updates", "info", parsedMsg.message);
+        break;
       case "testUrlResult":
         receiveUrlTestResult(parsedMsg.message, parsedMsg.requestId);
         break;
@@ -134,7 +137,8 @@
             if (savingSettings && !messages.some((reply) => reply?.type === "settingsSaved" || reply?.type === "saveSettingsError")) {
               throw new Error("Browsify did not acknowledge the settings change");
             }
-            if (msg.type === "checkForUpdates" && !messages.some((reply) => reply?.type === "updateInfo" || reply?.type === "updateCheckError")) {
+            // Signed updates acknowledge immediately; progress/results arrive over SSE.
+            if (msg.type === "checkForUpdates" && !messages.some((reply) => reply?.type === "updateAction" || reply?.type === "updateInfo" || reply?.type === "updateCheckError")) {
               throw new Error("Browsify did not return an update result");
             }
             for (const reply of messages) if (reply) handleMessage(reply);
@@ -244,7 +248,7 @@
             <span class="connection" class:connected={hasConfig} aria-label={hasConfig ? "Connected to Browsify" : "Connecting to Browsify"}></span>
             <span class="spacer"></span>
             <AppearanceMenu />
-            {#if updateInfo && updateInfo.updateCheckEnabled && !updateInfo.hasUpdate}
+            {#if updateInfo?.status === "upToDate"}
               <span class="up-to-date">Up to date</span>
             {/if}
             <span class="version">{version}</span>

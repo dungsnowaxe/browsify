@@ -32,7 +32,7 @@
     keepRunning = next.options?.keepRunning ?? true;
     hideIcon = next.options?.hideIcon ?? false;
     logRequests = next.options?.logRequests ?? false;
-    checkForUpdates = next.options?.checkForUpdates ?? false;
+    checkForUpdates = next.options?.checkForUpdates ?? true;
     defaultBrowser = next.defaultBrowserIsDynamic ? "" : next.defaultBrowser ?? "";
     defaultProfile = next.defaultProfile ?? "";
     reconcileChoices(installedBrowsers, profilesByBrowser);
@@ -139,20 +139,28 @@
       <OptionRow label="Keep running" hint="Stay available in the background" bind:checked={keepRunning} locked={!hasConfig} {onLockedClick} onchange={() => setOption("keepRunning", keepRunning)} />
       <OptionRow label="Hide menu bar icon" hint="Keep Browsify out of the menu bar" bind:checked={hideIcon} locked={!hasConfig} {onLockedClick} onchange={() => setOption("hideIcon", hideIcon)} />
       <OptionRow label="Log URL requests" hint="Write URL handling activity to a log" bind:checked={logRequests} locked={!hasConfig} {onLockedClick} onchange={() => setOption("logRequests", logRequests)} />
-      <OptionRow label="Automatically check for updates" hint="Find new releases; download and install them yourself" bind:checked={checkForUpdates} locked={!hasConfig} {onLockedClick} onchange={() => setOption("checkForUpdates", checkForUpdates)} />
+      <OptionRow label="Automatic updates" hint="Check daily and download signed updates. Ask before restarting." bind:checked={checkForUpdates} locked={!hasConfig} {onLockedClick} onchange={() => setOption("checkForUpdates", checkForUpdates)} />
     </div>
     <div class="settings-actions">
-      {#if !checkForUpdates}
-        <button class="app-button" type="button" disabled={!hasConfig || updateChecking} on:click={() => window.finicky.sendMessage({ type: "checkForUpdates" })}>{updateChecking ? "Checking…" : "Check for updates"}</button>
-      {/if}
       {#if hasOverrides}<button class="app-button" type="button" disabled={!hasConfig || settingsSaveState === "saving"} on:click={resetSettings}>Reset to defaults</button>{/if}
       {#if settingsSaveState === "error"}<button class="app-button" type="button" on:click={save}>Retry saving</button>{/if}
     </div>
-    {#if updateInfo?.version}
-      <p class="update-status" role="status">
-        {#if updateInfo.hasUpdate}<a href={updateInfo.downloadUrl} target="_blank" rel="noopener noreferrer">Download Browsify {updateInfo.version}</a>{:else}You’re up to date.{/if}
-      </p>
+  </section>
+
+  <section class="browser-card glass-panel" aria-labelledby="updates-heading">
+    <div class="card-heading">
+      <div>
+        <h2 id="updates-heading">Browsify updates</h2>
+        <p aria-live="polite">{updateInfo?.error ?? (updateInfo?.status === "checking" ? "Checking for updates…" : updateInfo?.status === "downloading" ? "Downloading and verifying update…" : updateInfo?.status === "ready" ? `${updateInfo.version} is ready to install.` : updateInfo?.status === "upToDate" ? "You have the latest stable release." : updateInfo?.hasUpdate ? `${updateInfo.version} is available.` : "Manual checks are always available, even with automatic updates off.")}</p>
+      </div>
+      <button class="app-button" type="button" disabled={!hasConfig || updateChecking || updateInfo?.status === "checking" || updateInfo?.status === "downloading"} on:click={() => window.finicky.sendMessage({ type: "checkForUpdates" })}>Check for Updates…</button>
+    </div>
+    {#if updateInfo?.status === "ready"}
+      <button class="app-button" type="button" on:click={() => window.finicky.sendMessage({ type: "restartToUpdate" })}>Restart to Update</button>
+    {:else if updateInfo?.hasUpdate && (updateInfo.status === "available" || updateInfo.status === "skipped" || updateInfo.status === "error")}
+      <button class="app-button" type="button" on:click={() => window.finicky.sendMessage({ type: "downloadUpdate" })}>Download Update</button>
     {/if}
+    <a href={updateInfo?.releaseUrl || "https://github.com/dungsnowaxe/browsify/releases"} target="_blank" rel="noopener noreferrer">Release notes and manual download ↗</a>
   </section>
 </PageContainer>
 
@@ -166,7 +174,6 @@
   .card-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
   .browser-card { display: flex; flex-direction: column; gap: 20px; }
   .settings-actions { display: flex; flex-wrap: wrap; gap: 12px; }
-  .update-status { margin: 0; }
   .behavior { display: flex; flex-direction: column; gap: 16px; }
   .save-note { color: var(--text-secondary); font-size: 13px; }
   .options-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
