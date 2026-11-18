@@ -99,6 +99,13 @@ pub struct ProfileResolver {
     firefox_cache: RwLock<HashMap<PathBuf, CachedFirefoxProfiles>>,
 }
 
+#[derive(Debug, serde::Serialize)]
+pub struct ProfileChoice {
+    pub id: String,
+    pub label: String,
+    pub aliases: Vec<String>,
+}
+
 impl ProfileResolver {
     pub fn new(home_dir: impl Into<PathBuf>) -> Self {
         Self {
@@ -186,6 +193,33 @@ impl ProfileResolver {
         } else {
             Ok(self.list_profiles(identifier))
         }
+    }
+
+    /// Choices use stable selectors, independently of what a browser calls a profile.
+    pub fn profile_choices(&self, identifier: &str) -> Result<Vec<ProfileChoice>, String> {
+        if let Some(meta) = lookup_browser_meta(identifier) {
+            if meta.id == crate::zen::ZEN_BUNDLE_ID {
+                let workspaces = crate::zen::list_workspaces(&self.zen_workspace_profile_dir()?)?;
+                return Ok(workspaces.into_iter().map(|workspace| ProfileChoice {
+                    id: format!("workspace:{}", workspace.uuid),
+                    aliases: vec![format!("workspace:{}", workspace.name)],
+                    label: workspace.name,
+                }).collect());
+            }
+            if meta.family == BrowserFamily::Chromium && meta.id != crate::dia::BUNDLE_ID {
+                let entries = self.load_chromium_profiles(&self.local_state_path(meta.config_dir_relative)).unwrap_or_default();
+                return Ok(entries.iter().map(|p| {
+                    let duplicate = entries.iter().filter(|other| other.display_name.eq_ignore_ascii_case(&p.display_name)).count() > 1;
+                    let label = if p.display_name.is_empty() { p.dir_key.clone() }
+                        else if duplicate { format!("{} ({})", p.display_name, p.dir_key) }
+                        else { p.display_name.clone() };
+                    ProfileChoice { id: format!("directory:{}", p.dir_key), label, aliases: vec![p.display_name.clone(), p.dir_key.clone()] }
+                }).collect());
+            }
+        }
+        let names = self.try_list_profiles(identifier)?;
+        Ok(names.iter().filter(|name| names.iter().filter(|other| other == name).count() == 1)
+            .map(|name| ProfileChoice { id: name.clone(), label: name.clone(), aliases: Vec::new() }).collect())
     }
 
     /// Lists known browser applications, never inferring installation from profile data.
@@ -499,6 +533,12 @@ impl ProfileResolver {
         match meta.family {
             BrowserFamily::Chromium => {
                 let path = self.local_state_path(meta.config_dir_relative);
+                if let Some(key) = profile.strip_prefix("directory:") {
+                    return self.load_chromium_profiles(&path).and_then(|entries| {
+                        entries.into_iter().find(|p| p.dir_key == key)
+                    }).map(|p| vec![format!("--profile-directory={}", p.dir_key)])
+                      .ok_or_else(|| format!("The selected profile is no longer available for {}.", meta.app_name));
+                }
                 let Some(entries) = self.load_chromium_profiles(&path) else {
                     // If Local State doesn't exist yet, still allow canonical directory names ("Default", "Profile 1")
                     if is_canonical_chromium_dir(profile) {
@@ -1090,6 +1130,12 @@ mod tests {
                 .unwrap(),
             vec!["--profile-directory=Profile 1"]
         );
+        // A picker selection uses the directory, not the potentially ambiguous display name.
+        let choices = resolver.profile_choices("com.google.Chrome").unwrap();
+        let work = choices.iter().find(|choice| choice.label == "Work").unwrap();
+        assert_eq!(resolver.resolve_profile_args("com.google.Chrome", &work.id).unwrap(), ["--profile-directory=Profile 1"]);
+        assert!(resolver.resolve_profile_args("com.google.Chrome", "directory:Profile 999").is_err());
+
         // Directory key match
         assert_eq!(
             resolver

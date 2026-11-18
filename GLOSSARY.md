@@ -37,8 +37,12 @@ The logical destination selected by a Handler Rule or default browser—specifyi
 _Avoid_: Browser config, browser spec
 
 **Profile Selector**:
-The user-specified name, email address, directory key, path, or container prefix that identifies a desired browser profile prior to resolution.
+The saved reference that identifies a desired browser profile prior to resolution. It may come from a discovered profile selection or be entered in the Primary Config.
 _Avoid_: Profile flag, profile ID
+
+**Unavailable Destination**:
+A saved Browser Target whose browser or selected profile is no longer available. It is distinct from choosing the browser without a specific profile.
+_Avoid_: Default profile, deleted rule
 
 **Launch Plan**:
 The concrete execution plan produced by resolving a Browser Target and its Profile Selector into final launch arguments, target URL, instance-spawning behavior, and window activation policy.

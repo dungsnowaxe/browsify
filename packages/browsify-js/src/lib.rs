@@ -655,6 +655,34 @@ impl HybridEngine {
 
     /// Returns `true` if the QuickJS VM was retained (config has dynamic JS callbacks),
     /// or `false` if the config was 100% lowered to native Rust and the JS VM was dropped.
+    /// Read-only rule descriptions in the original order, including custom callbacks.
+    pub fn describe_rules(&self) -> serde_json::Value {
+        fn matcher(m: &InspectedMatcher) -> String {
+            if let Some(pattern) = &m.pattern { return pattern.clone(); }
+            if let Some(patterns) = &m.patterns {
+                return patterns.iter().map(|p| p.pattern.as_str()).collect::<Vec<_>>().join(", ");
+            }
+            if let Some(items) = &m.items {
+                return items.iter().map(matcher).collect::<Vec<_>>().join(", ");
+            }
+            if let Some(apps) = &m.bundle_ids { return format!("From {}", apps.join(", ")); }
+            "Custom condition".into()
+        }
+        let handlers: Vec<_> = self.inspected.handlers.iter().map(|h| {
+            let condition = h.matcher.as_ref().map(matcher).unwrap_or_else(|| "Custom condition".into());
+            let target = h.browser.as_ref().map(|b| {
+                if b.name.is_empty() { "Don’t open".into() }
+                else if b.profile.is_empty() { b.name.clone() }
+                else { format!("{} ({})", b.name, b.profile) }
+            }).unwrap_or_else(|| "Custom destination".into());
+            format!("{condition} → {target}")
+        }).collect();
+        let rewrites: Vec<_> = self.inspected.rewrites.iter().map(|r| {
+            r.matcher.as_ref().map(matcher).unwrap_or_else(|| "Custom condition".into())
+        }).collect();
+        serde_json::json!({ "handlers": handlers, "rewrites": rewrites })
+    }
+
     pub fn has_js_vm(&self) -> bool {
         self.vm.is_some()
     }

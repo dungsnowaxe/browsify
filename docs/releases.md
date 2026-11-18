@@ -21,11 +21,23 @@ Release workflow does that, when a release tag is pushed.
    ```
 
 The Release workflow rejects tags that do not match the Cargo version, runs Rust
-and UI checks/tests, builds for Apple Silicon (arm64) on macOS 12 or later, and publishes:
+and UI checks/tests, and publishes the Apple Silicon (arm64) archive, its detached
+Ed25519 `.sig` file, and `SHA256SUMS`.
 
-- `Browsify-arm64.tar.gz`
-- `Browsify-arm64.tar.gz.sig` — detached Ed25519 update-package signature
-- `SHA256SUMS`
+### Transition to macOS 13
+
+1. Leave the repository variable `BROWSIFY_MACOS_13_RELEASES` unset for the bridge.
+   Publish and verify this release on macOS 12. It uses `Browsify-arm64.tar.gz`
+   and can recognize newer archives without installing them on macOS 12.
+2. Once the bridge is available, set `BROWSIFY_MACOS_13_RELEASES=true` before
+   tagging the next release. Its only archive is `Browsify-macos13-arm64.tar.gz`.
+   Never publish the macOS 13 build under the old archive name. Keep the bridge
+   downloadable. Users on macOS 13+ who skipped it can upgrade manually.
+3. Keep the repository variable enabled for future releases. Verify the ad
+   hoc-signed app can enable, disable, and launch at login before release.
+
+Local builds default to macOS 13. Use `MACOSX_DEPLOYMENT_TARGET=12.0 ./scripts/release.sh`
+only for preparing a macOS 12 bridge bundle.
 
 Publishing uses the workflow’s `GITHUB_TOKEN`. Signed updates also require the
 repository variable `BROWSIFY_UPDATE_PUBLIC_KEY` and secret

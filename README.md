@@ -35,10 +35,10 @@ personal browser, and meeting links wherever you want them.
 
 ## Installation
 
-Requires **macOS 12 or later** on an **Apple Silicon Mac**. Intel builds aren’t
+New builds require **macOS 13 or later** on an **Apple Silicon Mac**. The last macOS 12-compatible build remains available in GitHub Releases. Intel builds aren’t
 maintained. If you need one, [open an issue](https://github.com/dungsnowaxe/browsify/issues).
 
-1. Download `Browsify-arm64.tar.gz` from [GitHub Releases](https://github.com/snowaxe/browsify/releases).
+1. Download `Browsify-macos13-arm64.tar.gz` (or `Browsify-arm64.tar.gz` for the macOS 12 bridge) from [GitHub Releases](https://github.com/snowaxe/browsify/releases).
 2. Extract the archive and move **Browsify.app** to **Applications**.
 3. Open Browsify, then follow the setup below.
 

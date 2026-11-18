@@ -1,7 +1,7 @@
 # Update signing and rollout
 
 Browsify verifies a raw 64-byte detached Ed25519 signature over the exact bytes of
-`Browsify-arm64.tar.gz`. The trusted key is a base64-encoded raw 32-byte Ed25519
+`Browsify-macos13-arm64.tar.gz` (or `Browsify-arm64.tar.gz` for the macOS 12 bridge). The trusted key is a base64-encoded raw 32-byte Ed25519
 public key, embedded at compile time using `BROWSIFY_UPDATE_PUBLIC_KEY`. A checksum
 alone does not authorize installation. The signed bundle must match the advertised
 version and Browsify bundle identifier; older and prerelease versions are excluded.

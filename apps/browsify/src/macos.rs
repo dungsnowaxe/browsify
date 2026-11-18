@@ -1,7 +1,7 @@
 use crate::config_loader::BrowsifyEngine;
 use crate::launcher::execute_launch_plan;
 use crate::ui_server::{
-    is_ui_server_active, log_event, notify_config_reloaded, record_routed_url, LogLevel,
+    is_ui_server_active, log_event, notify_config_reloaded, LogLevel,
 };
 use browsify_core::{AppType, ModifierKeys, OpenerInfo, PowerInfo, ProfileResolver, SystemInfo};
 use browsify_js::{register_host_callbacks, HostQueryCallbacks};
@@ -238,7 +238,41 @@ pub fn installed_browser_names(resolver: &ProfileResolver) -> Vec<&'static str> 
     }
 }
 
-/// Requests macOS LaunchServices to set `Browsify.app` as the default handler for `http` and `https`.
+pub fn open_in_textedit(path: &std::path::Path) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    if std::process::Command::new("/usr/bin/open").args(["-b", "com.apple.TextEdit", "--"]).arg(path).status().is_ok_and(|s| s.success()) {
+        return Ok(());
+    }
+    let _ = path;
+    Err("Could not open the rules file in TextEdit.".into())
+}
+
+#[derive(serde::Serialize)]
+pub struct InstalledBrowser { pub id: String, pub label: String, pub aliases: Vec<String> }
+
+pub fn installed_browsers(resolver: &ProfileResolver) -> Vec<InstalledBrowser> {
+    let mut rows: Vec<_> = installed_browser_names(resolver).into_iter().filter_map(|name| {
+        let meta = browsify_core::browser::lookup_browser_meta(name)?;
+        Some(InstalledBrowser { id: meta.id.into(), label: name.into(), aliases: vec![name.into()] })
+    }).collect();
+    #[cfg(target_os = "macos")]
+    rows.extend(macos_impl::other_http_handlers());
+    rows.sort_by_key(|row| row.label.to_lowercase());
+    rows
+}
+
+#[derive(Clone, Copy, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum LoginItem { Unavailable, Off, On, NeedsApproval }
+
+pub fn login_item(enabled: Option<bool>) -> Result<LoginItem, String> {
+    #[cfg(target_os = "macos")]
+    return macos_impl::login_item(enabled);
+    #[cfg(not(target_os = "macos"))]
+    { let _ = enabled; Ok(LoginItem::Unavailable) }
+}
+
+/// Requests macOS LaunchServices to set Browsify as the default HTTP(S) handler.
 pub fn set_as_default_browser() -> bool {
     #[cfg(target_os = "macos")]
     {
@@ -431,7 +465,6 @@ pub fn handle_daemon_url_event(
             if let Some(ref w) = plan.warning {
                 log_event(LogLevel::Warn, w.clone());
             }
-            record_routed_url(raw_url, &plan.final_url, &plan.browser_name, &cfg.profile);
             if let Err(err) = execute_launch_plan(&plan, dry_run) {
                 log_event(LogLevel::Error, err);
             }
@@ -449,7 +482,7 @@ pub fn handle_daemon_url_event(
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod macos_impl {
     use super::*;
-    use crate::ui_server::{get_recent_routed_urls, spawn_or_open_ui_server};
+    use crate::ui_server::{open_ui_at, spawn_or_open_ui_server};
     use std::ffi::{c_char, c_void, CStr, CString};
     use std::ptr;
 
@@ -740,8 +773,90 @@ mod macos_impl {
         }
     }
 
+    #[link(name = "ServiceManagement", kind = "framework")]
+    unsafe extern "C" {}
+
+    struct Pool(Id);
+    impl Pool {
+        unsafe fn new() -> Self {
+            let send: unsafe extern "C" fn(Id, Sel) -> Id = unsafe { std::mem::transmute(objc_msgSend as *const c_void) };
+            Self(unsafe { send(cls("NSAutoreleasePool"), sel("new")) })
+        }
+    }
+    impl Drop for Pool {
+        fn drop(&mut self) {
+            unsafe {
+                let drain: unsafe extern "C" fn(Id, Sel) = std::mem::transmute(objc_msgSend as *const c_void);
+                drain(self.0, sel("drain"));
+            }
+        }
+    }
+
+    pub fn login_item(enabled: Option<bool>) -> Result<super::LoginItem, String> {
+        use super::LoginItem;
+        unsafe {
+            let _pool = Pool::new();
+            let send: unsafe extern "C" fn(Id, Sel) -> Id = std::mem::transmute(objc_msgSend as *const c_void);
+            let status: unsafe extern "C" fn(Id, Sel) -> isize = std::mem::transmute(objc_msgSend as *const c_void);
+            let change: unsafe extern "C" fn(Id, Sel, *mut Id) -> bool = std::mem::transmute(objc_msgSend as *const c_void);
+            let service_class = cls("SMAppService");
+            let bundle = send(cls("NSBundle"), sel("mainBundle"));
+            if service_class.is_null() || nsstring_to_rust(send(bundle, sel("bundleIdentifier"))).as_deref() != Some("com.lavenxsnow.browsify") {
+                return Ok(LoginItem::Unavailable);
+            }
+            let service = send(service_class, sel("mainAppService"));
+            let state = || match status(service, sel("status")) {
+                0 => LoginItem::Off, 1 => LoginItem::On, 2 => LoginItem::NeedsApproval,
+                _ => LoginItem::Unavailable,
+            };
+            let before = state();
+            if let Some(enabled) = enabled {
+                if before == LoginItem::Unavailable { return Err("Install Browsify.app before using Open at Login.".into()); }
+                if (enabled && before == LoginItem::Off) || (!enabled && before != LoginItem::Off) {
+                    let mut ns_error = ptr::null_mut();
+                    let success = change(service, sel(if enabled { "registerAndReturnError:" } else { "unregisterAndReturnError:" }), &mut ns_error);
+                    if !success && !(enabled && state() == LoginItem::NeedsApproval) {
+                        return Err(nsstring_to_rust(send(ns_error, sel("localizedDescription"))).unwrap_or_else(|| "macOS could not change the login item.".into()));
+                    }
+                }
+            }
+            Ok(state())
+        }
+    }
+
+    pub fn other_http_handlers() -> Vec<super::InstalledBrowser> {
+        unsafe {
+            let _pool = Pool::new();
+            let send: unsafe extern "C" fn(Id, Sel) -> Id = std::mem::transmute(objc_msgSend as *const c_void);
+            let with: unsafe extern "C" fn(Id, Sel, Id) -> Id = std::mem::transmute(objc_msgSend as *const c_void);
+            let count: unsafe extern "C" fn(Id, Sel) -> usize = std::mem::transmute(objc_msgSend as *const c_void);
+            let at: unsafe extern "C" fn(Id, Sel, usize) -> Id = std::mem::transmute(objc_msgSend as *const c_void);
+            let ws = send(cls("NSWorkspace"), sel("sharedWorkspace"));
+            let manager = send(cls("NSFileManager"), sel("defaultManager"));
+            let mut seen = std::collections::HashSet::new();
+            let mut rows = Vec::new();
+            for scheme in ["https://example.com", "http://example.com"] {
+                let url = with(cls("NSURL"), sel("URLWithString:"), nsstring(scheme));
+                let list = with(ws, sel("URLsForApplicationsToOpenURL:"), url);
+                for i in 0..count(list, sel("count")) {
+                    let app = at(list, sel("objectAtIndex:"), i);
+                    let bundle = with(cls("NSBundle"), sel("bundleWithURL:"), app);
+                    let Some(id) = nsstring_to_rust(send(bundle, sel("bundleIdentifier"))) else { continue };
+                    if id.eq_ignore_ascii_case("com.lavenxsnow.browsify") || browsify_core::browser::lookup_browser_meta(&id).is_some() || !seen.insert(id.to_ascii_lowercase()) { continue; }
+                    let path = send(app, sel("path"));
+                    if !nsstring_to_rust(path).is_some_and(|p| std::path::Path::new(&p).is_dir()) { continue; }
+                    let name = nsstring_to_rust(with(manager, sel("displayNameAtPath:"), path)).unwrap_or_else(|| id.clone());
+                    let label = name.strip_suffix(".app").unwrap_or(&name).to_owned();
+                    rows.push(super::InstalledBrowser { id, aliases: vec![label.clone()], label });
+                }
+            }
+            rows
+        }
+    }
+
     pub fn installed_application(bundle_id: &str) -> bool {
         unsafe {
+            let _pool = Pool::new();
             let object: unsafe extern "C" fn(Id, Sel) -> Id =
                 std::mem::transmute(objc_msgSend as *const c_void);
             let lookup: unsafe extern "C" fn(Id, Sel, Id) -> Id =
@@ -1020,7 +1135,13 @@ mod macos_impl {
 
     extern "C" fn show_ui_action(_self: Id, _cmd: Sel, _sender: Id) {
         if let Some(ctx) = DAEMON_CTX.get() {
-            spawn_or_open_ui_server(Arc::clone(&ctx.engine), Arc::clone(&ctx.resolver));
+            open_ui_at(Arc::clone(&ctx.engine), Arc::clone(&ctx.resolver), "/rules");
+        }
+    }
+
+    extern "C" fn settings_action(_self: Id, _cmd: Sel, _sender: Id) {
+        if let Some(ctx) = DAEMON_CTX.get() {
+            open_ui_at(Arc::clone(&ctx.engine), Arc::clone(&ctx.resolver), "/preferences");
         }
     }
 
@@ -1030,10 +1151,11 @@ mod macos_impl {
 
     extern "C" fn edit_config_action(_self: Id, _cmd: Sel, _sender: Id) {
         if let Some(ctx) = DAEMON_CTX.get() {
-            if let Ok(eng) = ctx.engine.lock() {
-                if let Some(ref p) = eng.summary().config_path {
-                    let _ = std::process::Command::new("open").arg(p).spawn();
-                }
+            let path = ctx.engine.lock().ok().and_then(|eng| eng.primary_config_path().map(|p| p.to_owned()));
+            if let Some(path) = path {
+                if let Err(error) = super::open_in_textedit(&path) { log_event(LogLevel::Error, error); }
+            } else {
+                open_ui_at(Arc::clone(&ctx.engine), Arc::clone(&ctx.resolver), "/rules");
             }
         }
     }
@@ -1203,69 +1325,13 @@ mod macos_impl {
 
             let menu = init_fn(alloc_fn(cls("NSMenu"), sel("alloc")), sel("init"));
 
-            let mode_label = ctx
-                .engine
-                .lock()
-                .map(|e| {
-                    format!(
-                        "Browsify v{} — {}",
-                        env!("CARGO_PKG_VERSION"),
-                        if e.summary().pure_native_fast_path {
-                            "Native Fast Path"
-                        } else {
-                            "Hybrid QuickJS"
-                        }
-                    )
-                })
-                .unwrap_or_else(|_| "Browsify".to_string());
-
-            let header = add_item_fn(
-                menu,
-                sel("addItemWithTitle:action:keyEquivalent:"),
-                nsstring(&mode_label),
-                ptr::null_mut(),
-                nsstring(""),
-            );
+            let header = add_item_fn(menu, sel("addItemWithTitle:action:keyEquivalent:"),
+                nsstring(concat!("Browsify v", env!("CARGO_PKG_VERSION"))), ptr::null_mut(), nsstring(""));
             set_bool(header, sel("setEnabled:"), false);
-
-            let _ = add_item_fn(
-                menu,
-                sel("addItemWithTitle:action:keyEquivalent:"),
-                nsstring("Rules & URL Tester…"),
-                sel("showUiAction:"),
-                nsstring(","),
-            );
-
-            // Recent URLs submenu (up to 10 items)
-            let recent = get_recent_routed_urls();
-            if !recent.is_empty() {
-                let recent_item = add_item_fn(
-                    menu,
-                    sel("addItemWithTitle:action:keyEquivalent:"),
-                    nsstring("Recent URLs"),
-                    ptr::null_mut(),
-                    nsstring(""),
-                );
-                let sub = init_fn(alloc_fn(cls("NSMenu"), sel("alloc")), sel("init"));
-                for entry in recent {
-                    let target_desc = if entry.profile.is_empty() {
-                        entry.browser.clone()
-                    } else {
-                        format!("{} ({})", entry.browser, entry.profile)
-                    };
-                    let label = format!("{} → {}", entry.input_url, target_desc);
-                    let row = add_item_fn(
-                        sub,
-                        sel("addItemWithTitle:action:keyEquivalent:"),
-                        nsstring(&label),
-                        ptr::null_mut(),
-                        nsstring(""),
-                    );
-                    set_bool(row, sel("setEnabled:"), false);
-                }
-                set_id(recent_item, sel("setSubmenu:"), sub);
-                void_fn(sub, sel("release"));
-            }
+            let _ = add_item_fn(menu, sel("addItemWithTitle:action:keyEquivalent:"),
+                nsstring("Settings…"), sel("settingsAction:"), nsstring(","));
+            let _ = add_item_fn(menu, sel("addItemWithTitle:action:keyEquivalent:"),
+                nsstring("Rules & URL Tester…"), sel("showUiAction:"), nsstring(""));
 
             if !check_is_default_browser() {
                 let _ = add_item_fn(
@@ -1376,6 +1442,7 @@ mod macos_impl {
                     show_ui_action as Imp,
                     c"v@:@".as_ptr(),
                 );
+                class_addMethod(delegate_cls, sel("settingsAction:"), settings_action as Imp, c"v@:@".as_ptr());
                 class_addMethod(
                     delegate_cls,
                     sel("setDefaultBrowserAction:"),
