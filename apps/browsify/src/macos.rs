@@ -773,7 +773,7 @@ mod macos_impl {
         }
     }
 
-    #[link(name = "ServiceManagement", kind = "framework")]
+    #[cfg_attr(target_os = "macos", link(name = "ServiceManagement", kind = "framework"))]
     unsafe extern "C" {}
 
     struct Pool(Id);
