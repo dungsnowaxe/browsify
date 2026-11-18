@@ -49,9 +49,10 @@ This produces the Apple Silicon app at `apps/browsify/build/Browsify.app` and th
 archive and checksums in `dist/`. The local release script does not create the
 detached update signature; the publish job does that separately.
 
-Release builds are **not Apple Developer ID–signed or notarized**. Update-package
-signing does not replace Apple signing or notarization, so Gatekeeper may block
-initial installation.
+Release bundles are ad hoc-signed to seal their contents, and CI verifies the
+bundle after extracting the archive. Neither ad hoc signing nor update-package
+signing replaces Developer ID signing or notarization, so Gatekeeper may still
+block initial installation.
 
 ## Update behavior
 

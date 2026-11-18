@@ -47,7 +47,7 @@ jobs:
           npm test
       - name: Test Rust workspace
         run: cargo test --workspace --locked
-      - name: Build unsigned Apple Silicon release with update verification
+      - name: Build Apple Silicon release with update verification
         run: |
           test -n "$BROWSIFY_UPDATE_PUBLIC_KEY" || { echo 'Configure BROWSIFY_UPDATE_PUBLIC_KEY before releasing'; exit 1; }
           ./scripts/release.sh
@@ -60,7 +60,10 @@ jobs:
           test -s apps/browsify/build/Browsify.app/Contents/Resources/ui/index.html
           cd dist
           shasum -a 256 -c SHA256SUMS
-          tar -tzf Browsify-arm64.tar.gz
+          staging=$(mktemp -d)
+          trap 'rm -rf "$staging"' EXIT
+          tar -xzf Browsify-arm64.tar.gz -C "$staging"
+          codesign --verify --deep --strict "$staging/Browsify.app"
       - uses: actions/upload-artifact@v4
         with:
           name: release

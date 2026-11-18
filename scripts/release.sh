@@ -20,11 +20,13 @@ if [ "$architectures" != arm64 ]; then
     echo "release: expected an arm64-only executable, found: $architectures" >&2
     exit 1
 fi
+# Seal the completed app bundle, not just its linker-signed executable.
+codesign --force --sign - apps/browsify/build/Browsify.app
 mkdir -p dist
 COPYFILE_DISABLE=1 tar -czf dist/Browsify-arm64.tar.gz -C apps/browsify/build Browsify.app
 (
     cd dist
     shasum -a 256 Browsify-arm64.tar.gz > SHA256SUMS
 )
-echo "release: unsigned Apple Silicon bundle at apps/browsify/build/Browsify.app"
+echo "release: ad hoc-signed Apple Silicon bundle at apps/browsify/build/Browsify.app"
 echo "release: archive and checksums in dist/"
