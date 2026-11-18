@@ -1,0 +1,21 @@
+{
+  "name": "@browsify/landing",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.20.0",
+  "engines": {
+    "node": "24.22.1"
+  },
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "generate-types": "wrangler types"
+  },
+  "dependencies": {
+    "@astrojs/cloudflare": "^14.4.8",
+    "astro": "^7.4.12",
+    "wrangler": "^4.164.0"
+  }
+}
