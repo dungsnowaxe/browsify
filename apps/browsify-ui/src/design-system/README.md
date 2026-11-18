@@ -14,7 +14,7 @@ Browsify keeps the on-demand browser UI from ADR 0002.
 
 The Browsify logo opens Home. The compact labeled rail links to Rules, Test URL,
 Activity, Settings and About; Home does not duplicate these navigation links.
-Settings owns the browser/profile selector and app behavior toggles.
+Rules and Settings share `Select.svelte` for single-choice fields. Compose it with native `<option>` or `<optgroup>` children and an associated label. Settings owns app behavior toggles.
 
 ## Boundaries
 

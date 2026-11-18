@@ -1,6 +1,9 @@
 <script lang="ts">
   import { onMount, untrack } from "svelte";
   import PageContainer from "../components/PageContainer.svelte";
+  import Select from "../components/Select.svelte";
+
+  const fieldPrefix = $props.id();
   import type { Choice, EditorGroup, EditorRow, ProfileChoices, RuleEditor, RuleSource } from "../types";
 
   let { editor, editorError, ruleSaving, browserChoices, profileChoices }: {
@@ -127,24 +130,27 @@
           <fieldset class="rule glass-panel" disabled={!!ruleSaving}>
             <legend>Rule {i + 1}</legend>
             <div class="destinations">
-              <label>Browser
-                <select class="app-input" value={browser?.id ?? rule.browser}
+              <div class="destination-field">
+                <label for={`${fieldPrefix}-browser-${row.key}`}>Browser</label>
+                <Select id={`${fieldPrefix}-browser-${row.key}`} value={browser?.id ?? rule.browser}
                   onchange={(event) => { rule.browser = event.currentTarget.value; rule.profile = ""; draft.dirty = true; }}>
                   <option value="" disabled>{browserChoices === null ? "Finding browsers…" : "Choose a browser"}</option>
                   {#if rule.browser && !browser}<option value={rule.browser}>{rule.browser === "none" ? "Don’t open" : `${rule.browser} (${browserChoices ? "unavailable" : "saved"})`}</option>{/if}
                   {#each browserChoices ?? [] as choice (choice.id)}<option value={choice.id}>{choice.label}</option>{/each}
-                </select>
-              </label>
+                </Select>
+              </div>
               {#if browser && (!catalog || catalog.error || catalog.profiles.length) || rule.profile}
-                <label>Profile
-                  <select class="app-input" value={profile?.id ?? rule.profile ?? ""} disabled={!!browser && (!catalog || !!catalog.error)}
+                <div class="destination-field">
+                  <label for={`${fieldPrefix}-profile-${row.key}`}>Profile</label>
+                  <Select id={`${fieldPrefix}-profile-${row.key}`} value={profile?.id ?? rule.profile ?? ""} disabled={!!browser && (!catalog || !!catalog.error)}
+                    aria-describedby={catalog?.error ? `${fieldPrefix}-profile-error-${row.key}` : undefined}
                     onchange={(event) => { rule.profile = event.currentTarget.value; draft.dirty = true; }}>
                     <option value="">{browser && !catalog ? "Finding profiles…" : "Use browser default"}</option>
                     {#if rule.profile && !profile}<option value={rule.profile}>{rule.profile} ({!browser || catalog && !catalog.error ? "unavailable" : "saved"})</option>{/if}
                     {#each catalog?.profiles ?? [] as choice (choice.id)}<option value={choice.id}>{choice.label}</option>{/each}
-                  </select>
-                  {#if catalog?.error}<small>Profiles couldn’t be read. Refresh to try again.</small>{/if}
-                </label>
+                  </Select>
+                  {#if catalog?.error}<small id={`${fieldPrefix}-profile-error-${row.key}`}>Profiles couldn’t be read. Refresh to try again.</small>{/if}
+                </div>
               {/if}
             </div>
             {#each rule.match as pattern, j}
@@ -187,7 +193,9 @@
   .read-row { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; overflow-wrap: anywhere; }
   legend { padding-inline: 5px; color: var(--text-secondary); }
   .destinations { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); gap: 12px; }
-  label { display: grid; gap: 5px; min-width: 0; font-size: .86rem; }
+  .destination-field, label { display: grid; gap: 5px; min-width: 0; }
+  .destination-field { align-content: start; }
+  label { font-size: 13px; color: var(--text-secondary); }
   .app-input { min-width: 0; width: 100%; }
   .pattern { margin-top: 10px; display: flex; gap: 8px; align-items: end; }
   .pattern label { flex: 1; }
