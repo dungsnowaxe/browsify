@@ -294,6 +294,12 @@ pub const BROWSERS_REGISTRY: &[BrowserMeta] = &[
         config_dir_relative: "com.operasoftware.OperaGX",
         family: BrowserFamily::Chromium,
     },
+    BrowserMeta {
+        id: "org.ecosia.browser",
+        app_name: "Ecosia Browser",
+        config_dir_relative: "EcosiaBrowser",
+        family: BrowserFamily::Chromium,
+    },
     // Dia uses Chromium, but profile discovery and targeting use native automation.
     BrowserMeta {
         id: "company.thebrowser.dia",
