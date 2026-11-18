@@ -434,11 +434,14 @@ fn parse_release(bytes: &[u8]) -> Result<Option<Release>, String> {
     Ok(Some(Release {
         version: tag.to_owned(),
         url: format!("https://github.com/dungsnowaxe/browsify/releases/tag/{tag}"),
-        archive: asset("Browsify-universal.tar.gz")?,
-        signature: asset("Browsify-universal.tar.gz.sig")?,
+        archive: asset("Browsify-arm64.tar.gz")?,
+        signature: asset("Browsify-arm64.tar.gz.sig")?,
     }))
 }
 fn fetch_release(generation: u64) -> Result<Option<Release>, String> {
+    if cfg!(all(target_os = "macos", target_arch = "x86_64")) {
+        return Ok(None); // Official releases are Apple Silicon only.
+    }
     let temp = tempfile::tempdir().map_err(|e| e.to_string())?;
     let path = temp.path().join("release.json");
     fetch(RELEASES, &path, 1024 * 1024, generation)?;
@@ -1099,8 +1102,8 @@ mod tests {
             serde_json::json!({
                 "tag_name": "v999.0.0", "draft": false, "prerelease": false,
                 "assets": [
-                    {"name": "Browsify-universal.tar.gz", "browser_download_url": format!("{origin}/Browsify-universal.tar.gz")},
-                    {"name": "Browsify-universal.tar.gz.sig", "browser_download_url": format!("{origin}/Browsify-universal.tar.gz.sig")}
+                    {"name": "Browsify-arm64.tar.gz", "browser_download_url": format!("{origin}/Browsify-arm64.tar.gz")},
+                    {"name": "Browsify-arm64.tar.gz.sig", "browser_download_url": format!("{origin}/Browsify-arm64.tar.gz.sig")}
                 ]
             })
         };

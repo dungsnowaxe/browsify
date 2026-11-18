@@ -35,9 +35,10 @@ personal browser, and meeting links wherever you want them.
 
 ## Installation
 
-Requires **macOS 12 or later**, on Apple Silicon or Intel.
+Requires **macOS 12 or later** on an **Apple Silicon Mac**. Intel builds aren’t
+maintained. If you need one, [open an issue](https://github.com/dungsnowaxe/browsify/issues).
 
-1. Download `Browsify-universal.tar.gz` from [GitHub Releases](https://github.com/snowaxe/browsify/releases).
+1. Download `Browsify-arm64.tar.gz` from [GitHub Releases](https://github.com/snowaxe/browsify/releases).
 2. Extract the archive and move **Browsify.app** to **Applications**.
 3. Open Browsify, then follow the setup below.
 
@@ -212,7 +213,7 @@ cargo test --workspace --locked
 (cd apps/browsify-ui && npm run check && npm test)
 ```
 
-For universal builds, release publishing, and update signing, see the
+For macOS builds, release publishing, and update signing, see the
 [release guide](docs/releases.md). Contributions are welcome: open an issue to
 discuss a change or send a focused pull request with tests where appropriate.
 
