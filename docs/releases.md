@@ -3,14 +3,17 @@
 ## Continuous integration
 
 CI runs Rust workspace tests and UI checks/tests on pull requests and pushes to
-`main`. The macOS build workflow also produces an unsigned universal app artifact.
+`main`. These runs do not build or package the universal macOS app. Only the
+Release workflow does that, when a release tag is pushed.
 
 ## Publish a stable release
 
 1. Update `[workspace.package].version` in `Cargo.toml` and run
    `cargo check --workspace` to refresh the workspace versions in `Cargo.lock`.
 2. Commit the version changes and merge to `main` after CI passes.
-3. Tag that commit and push the tag (substitute your version):
+3. Tag that commit and push the tag (substitute your version). The tag starts
+   the Release workflow, which creates the GitHub Release after the build and
+   update signing succeed. Do not create the GitHub Release manually.
 
    ```sh
    git tag v0.1.0

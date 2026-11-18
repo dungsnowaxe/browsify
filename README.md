@@ -13,9 +13,14 @@
 
 ## Why Browsify?
 
-Keep work links in your work profile, personal links in your personal browser,
-and meeting links where you want them. Set Browsify as your default browser and
-it routes links opened from other apps using your rules.
+I juggle enough work accounts that clicking a link felt like playing browser
+roulette. [Finicky](https://github.com/johnste/finicky) got me most of the way
+there, but it didn’t have a few features I wanted. So I thought, “Why not fork
+it and vibe away?” 🤣 Anyway, now there’s a Rust app.
+
+Set Browsify as your default browser and it routes links opened from other apps
+using your rules. Keep work links in your work profile, personal links in your
+personal browser, and meeting links wherever you want them.
 
 - **Browser and profile routing** — choose a browser, a Chromium or Firefox profile,
   or a Firefox container for matching links.
@@ -213,17 +218,14 @@ discuss a change or send a focused pull request with tests where appropriate.
 
 ## Support
 
-Browsify is free and open source. The immediate funding goal is to cover the
-**Apple Developer Program membership: US$99 per year**, with regional pricing
-where applicable ([Apple’s pricing](https://developer.apple.com/programs/enroll/)).
+If Browsify saves you from signing into the wrong account for the tenth time
+this week, consider sponsoring it. The first goal is to cover the **US$99/year
+[Apple Developer Program membership](https://developer.apple.com/programs/enroll/)**
+so I can sign and notarize future releases and make them easier to install on macOS.
 
-Membership would allow the maintainer to set up Developer ID signing and Apple
-notarization, making installation easier. Enrollment alone does not sign or
-notarize the app; that release workflow still needs to be implemented.
-
-A donation link is not available yet. Financial support will be optional and will
-not unlock features. Until then, bug reports, contributions, and sharing the
-project are welcome ways to help.
+GitHub Sponsors is pending approval. I’ll add a link here once it’s live.
+Browsify will stay free and open source. In the meantime, a bug report or a link
+shared with someone who also has too many browser profiles goes a long way.
 
 ## Credits and license
 
