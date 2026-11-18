@@ -1,10 +1,17 @@
-use browsify_core::{AppType, ResolvedLaunchPlan};
+use browsify_core::{AppType, LaunchAction, ResolvedLaunchPlan};
 use std::process::Command;
 
 /// Formats the macOS `open` command equivalent for dry-run and diagnostic logging.
 pub fn format_open_command(plan: &ResolvedLaunchPlan) -> String {
     if plan.app_type == AppType::None || plan.browser_name.is_empty() {
         return "# [Suppressed: AppType is 'none']".to_string();
+    }
+
+    if let LaunchAction::DiaProfile { profile } = &plan.action {
+        return format!(
+            "Dia native profile {} (requires an open Dia window; checked at dispatch)",
+            shell_quote(profile)
+        );
     }
 
     let mut parts = vec!["open".to_string()];
@@ -58,6 +65,42 @@ pub fn execute_launch_plan(plan: &ResolvedLaunchPlan, dry_run: bool) -> Result<(
         return Ok(());
     }
 
+    if let LaunchAction::DiaProfile { profile } = &plan.action {
+        return browsify_core::dia::open_profile(profile, &plan.final_url, plan.open_in_background);
+    }
+
+    // A Zen `--space <selector>` argument is validated against the workspace
+    // store right before dispatch and rewritten to the stable workspace UUID.
+    // A missing workspace suppresses the launch: Zen would navigate anyway,
+    // leaking the URL into the active workspace.
+    let mut resolved_plan;
+    let plan = if is_zen_plan(plan) {
+        match plan.args.iter().position(|a| a == "--space") {
+            Some(space_index) => {
+                let Some(selector) = plan.args.get(space_index + 1).cloned() else {
+                    return Err("Zen --space argument is missing its workspace selector.".to_string());
+                };
+                let home = std::env::var("HOME").unwrap_or_default();
+                let zen_root = std::path::Path::new(&home)
+                    .join("Library/Application Support")
+                    .join("zen");
+                let workspace = browsify_core::zen::profile_dir(&zen_root, &plan.args)
+                    .and_then(|dir| browsify_core::zen::resolve_workspace(&dir, &selector));
+                match workspace {
+                    Ok(ws) => {
+                        resolved_plan = plan.clone();
+                        resolved_plan.args[space_index + 1] = ws.uuid;
+                        &resolved_plan
+                    }
+                    Err(err) => return Err(err),
+                }
+            }
+            None => plan,
+        }
+    } else {
+        plan
+    };
+
     let mut open_args = Vec::new();
     match plan.app_type {
         AppType::BundleId => {
@@ -98,6 +141,11 @@ pub fn execute_launch_plan(plan: &ResolvedLaunchPlan, dry_run: bool) -> Result<(
     }
 
     Ok(())
+}
+
+fn is_zen_plan(plan: &ResolvedLaunchPlan) -> bool {
+    browsify_core::lookup_browser_meta(&plan.browser_name)
+        .is_some_and(|m| m.id == browsify_core::zen::ZEN_BUNDLE_ID)
 }
 
 fn shell_quote(s: &str) -> String {

@@ -437,7 +437,7 @@ impl BrowsifyEngine {
     pub fn validate_profiles(&self, resolver: &ProfileResolver) -> Vec<String> {
         let mut warnings = Vec::new();
         for (browser, profile) in &self.summary.referenced_profiles {
-            if let Err(err) = resolver.resolve_profile_args(browser, profile) {
+            if let Err(err) = resolver.validate_profile(browser, profile) {
                 warnings.push(err);
             }
         }
@@ -614,14 +614,9 @@ pub fn migrate_config(
                 if !rep.referenced_profiles.is_empty() {
                     report_str.push_str("\nReferenced Browser Profiles:\n");
                     for (browser, profile) in &rep.referenced_profiles {
-                        match resolver.resolve_profile_args(browser, profile) {
-                            Ok(flags) => {
-                                report_str.push_str(&format!(
-                                    "  ✓ {} -> {:?} ({})\n",
-                                    browser,
-                                    profile,
-                                    flags.join(" ")
-                                ));
+                        match resolver.validate_profile(browser, profile) {
+                            Ok(()) => {
+                                report_str.push_str(&format!("  ✓ {} -> {:?}\n", browser, profile));
                             }
                             Err(warn) => {
                                 report_str.push_str(&format!(

@@ -1,6 +1,6 @@
 # Draft: Zen workspace/container and Safari profile routing
 
-Research date: 2026-11-17. Proposal only; no browser launches, personal profile inspection, OS changes, or implementation performed. Release availability and Safari automation remain feasibility gates, not promised capabilities.
+Research date: 2026-11-17; local verification follow-up: 2026-11-18. Zen workspace routing is now implemented and live-verified (`workspace:` selectors lowering to the native `--space` flag with dispatch-time UUID resolution and fail-closed suppression); Dia has a bounded native-automation implementation. Safari profile targeting closed as unsupported on the evidence gathered; see [local verification results](zen-safari-routing-verification.md) for installed-resource inspection, live checks and the Zen/Safari follow-ups.
 
 ## Findings and evidence
 
@@ -24,6 +24,8 @@ Strong native-routing evidence exists in upstream development source, pinned at 
 
 Consequently, prioritize native workspace routing with its default container. Do not assume an extension is necessary. Native arbitrary container selection independent of workspace remains unverified; neither the workspace flag nor native container existence proves that capability.
 
+Local verification found a released installation advertising `--space`. Cold and warm launches through Browsify reached a synthetic origin using an explicit disposable Firefox profile. A nonexistent workspace also delivered the URL with the active session's synthetic cookie: strict workspace targeting therefore fails its negative gate on that installation. Do not treat release availability or a successful warm handoff as sufficient to enable strict selectors.
+
 For the existing protocol, [the Open external links in a container author's repository](https://github.com/honsiorovskyi/open-url-in-container) explicitly provides the custom protocol handler and documents the `ext+container:name=…&url=…` form. Its development README also distinguishes stable 1.0.3 from future 2.x and discusses confirmation/signature behavior. This establishes an extension implementation of this syntax, not universal built-in Zen support or compatibility with every installed version. Verify the exact handler, version, profile installation and unknown-container behavior. Do not conflate Mozilla Multi-Account Containers with this separately supplied handler; do not disable confirmation or read signing secrets.
 
 ### Safari: profile routing exists; arbitrary external selection is unproven
@@ -41,6 +43,18 @@ Investigated automation surfaces:
 
 No claim that Safari external profile targeting is impossible follows from these searches. Undocumented events, profile UUID selectors, URL schemes, and private storage mappings remain hypotheses, not shipping contracts. Avoid reverse-engineering personal history/cookie stores for discovery.
 
+Local inspection of the shipped Safari dictionary and its standard-suite include found no profile-selection vocabulary. This closes the dictionary-inspection task for that installed build only; Shortcuts, private events and live profile delivery remain unverified.
+
+### Dia: distinguish engine family from routing transport
+
+Browsify already registers Dia as Chromium, with `Dia/User Data` discovery and the generic Chromium profile argument path. That is an implementation assumption, not live verification of the directory layout or `--profile-directory` behavior.
+
+The installed Dia scripting dictionary exposes window-scoped profiles, a read-only active profile, profile focus, tabs within a profile, and moving tabs to a profile. It describes a profile as “a space of tabs”; it exposes a name and one-based index, but no stable profile ID. Neither this terminology nor Chromium engine identification establishes cookie isolation or equivalence to Chromium profile directory keys.
+
+Live AppleScript creation of a tab directly within the existing profile delivered a local marker URL. An out-of-range profile index raised an invalid-index error and did not deliver its marker. This is a promising separate transport, not proof of two-profile isolation, cold-start behavior, stable addressing, or race-free rejection. Do not implement focus-then-open or open-then-move as strict routing: navigation may already have occurred in another context.
+
+The follow-up created two non-sharing test profiles and verified distinct cookies, exact-name targeting, missing-name rejection, foreground selection, and a serialized concurrent burst through the rebuilt CLI. The implementation uses a typed Dia action with the existing profile string, exact unique names, an already-open window, and no fallback. It does not claim stable-ID selection, cold startup, Chromium CLI equivalence, or atomic protection against changes made in Dia. Background creation still selects the target profile. See the verification report for the initial failures and fixes.
+
 Context7 was consulted for AppleScript documentation (resolved Apple's archived language guide); general language guidance cannot establish Safari-specific commands. No API implementation syntax is proposed here.
 
 ## Phased plan and feasibility gates
@@ -49,7 +63,7 @@ Context7 was consulted for AppleScript documentation (resolved Apple's archived 
 
 1. Pin tested Zen release versions to the source above; inspect release source/help without launching user profiles. Verify macOS cold/warm command-line forwarding, explicit Firefox profile selection and workspace/default-container binding. Native workspace routing and arbitrary native container routing are separate capability bits.
 2. Build a synthetic metadata inventory: browser installation/version, enclosing profile ID, workspace UUID, container ID, display label and workspace-container relation. Determine authoritative metadata from upstream source before defining a parser. Prefer a narrow read-only metadata surface; never enumerate tabs, history, cookies or credentials. Permission failure means discovery unavailable, not no profiles.
-3. For Safari, inspect shipped dictionary/action resources and test only documented candidates first. Record event/action payload, target identifier scope, permissions and success semantics. Undocumented candidates require an explicit experimental decision and a reproducible version matrix.
+3. For Safari, inspect shipped dictionary/action resources and test only documented candidates first. For Dia, test its shipped profile-targeted scripting surface independently of the existing Chromium-family branch. Record event/action payload, target identifier scope, permissions and success semantics. Undocumented candidates require an explicit experimental decision and a reproducible version matrix.
 4. Gate: enable only combinations that prove the URL reaches the requested context. Unknown IDs in Zen can retain the active workspace; preflight alone cannot eliminate deletion races. If the browser cannot reject stale targets atomically, document this limitation and keep strict targeting gated pending an upstream fix or reliable acknowledged transport. Serialization alone does not prevent user interference.
 
 Deliverable: capability matrix with supported/unsupported/unknown states, evidence, minimum tested versions and permission requirements. An unsupported Safari result is a valid phase outcome.
@@ -76,7 +90,7 @@ Ship verified Zen capabilities independently of Safari. Keep unproven transports
 
 Pure fixture tests cover legacy config round trips, both JS evaluation paths, stable ID resolution, duplicate/Unicode names, renamed/deleted targets, wrong enclosing profile, corrupt/missing metadata, denied access, version gating, URL encoding exactly once, custom argument conflicts, and dry-run non-execution. Existing untargeted Safari and Firefox/container behavior must remain compatible.
 
-Before future live tests, read `.agents/skills/browsify-macos-testing/SKILL.md`. Use a dedicated test account or approved disposable browser data with the real HOME; no personal data, default-handler changes, or temporary-HOME browser launches. These tests were not run for this draft.
+Before future live tests, read `.agents/skills/browsify-macos-testing/SKILL.md`. Use a dedicated test account or approved disposable browser data with the real HOME; no personal data, default-handler changes, or temporary-HOME browser launches. The bounded checks in the linked verification report do not satisfy the full acceptance matrix below.
 
 Use a controlled local test origin with synthetic, distinct cookie markers in contexts A and B and a per-request nonce. Assert the server-observed marker and nonce match the requested context, not merely the visible title, active workspace or process exit. Include a no-cookie context; confirm no request reaches the wrong context even briefly.
 
