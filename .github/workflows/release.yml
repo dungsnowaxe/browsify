@@ -26,7 +26,7 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
+          targets: aarch64-apple-darwin
       - name: Validate release tag
         run: |
           version=$(cargo metadata --no-deps --locked --format-version 1 | jq -r '.packages[] | select(.name == "browsify") | .version')
@@ -47,26 +47,25 @@ jobs:
           npm test
       - name: Test Rust workspace
         run: cargo test --workspace --locked
-      - name: Build unsigned universal release with update verification
+      - name: Build unsigned Apple Silicon release with update verification
         run: |
           test -n "$BROWSIFY_UPDATE_PUBLIC_KEY" || { echo 'Configure BROWSIFY_UPDATE_PUBLIC_KEY before releasing'; exit 1; }
           ./scripts/release.sh
           printf '%s' "$BROWSIFY_UPDATE_PUBLIC_KEY" > dist/update-public-key.txt
       - name: Verify release bundle and archive
         run: |
-          lipo -verify_arch arm64 x86_64 apps/browsify/build/Browsify.app/Contents/MacOS/browsify
           plutil -lint apps/browsify/build/Browsify.app/Contents/Info.plist
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' apps/browsify/build/Browsify.app/Contents/Info.plist)" = "${RELEASE_TAG#v}"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' apps/browsify/build/Browsify.app/Contents/Info.plist)" = "${RELEASE_TAG#v}"
           test -s apps/browsify/build/Browsify.app/Contents/Resources/ui/index.html
           cd dist
           shasum -a 256 -c SHA256SUMS
-          tar -tzf Browsify-universal.tar.gz
+          tar -tzf Browsify-arm64.tar.gz
       - uses: actions/upload-artifact@v4
         with:
           name: release
           path: |
-            dist/Browsify-universal.tar.gz
+            dist/Browsify-arm64.tar.gz
             dist/SHA256SUMS
             dist/update-public-key.txt
           if-no-files-found: error
@@ -99,10 +98,10 @@ jobs:
           actual_public=$(tail -c 32 "$public_file" | base64 -w0)
           embedded_public=$(< dist/update-public-key.txt)
           test "$actual_public" = "$UPDATE_PUBLIC_KEY" && test "$actual_public" = "$embedded_public" || { echo 'Update signing key does not match embedded public key'; exit 1; }
-          openssl pkeyutl -sign -rawin -inkey "$key_file" -in dist/Browsify-universal.tar.gz -out dist/Browsify-universal.tar.gz.sig
-          test "$(wc -c < dist/Browsify-universal.tar.gz.sig)" -eq 64
+          openssl pkeyutl -sign -rawin -inkey "$key_file" -in dist/Browsify-arm64.tar.gz -out dist/Browsify-arm64.tar.gz.sig
+          test "$(wc -c < dist/Browsify-arm64.tar.gz.sig)" -eq 64
           openssl pkey -in "$key_file" -pubout > "$public_file"
-          openssl pkeyutl -verify -rawin -pubin -inkey "$public_file" -in dist/Browsify-universal.tar.gz -sigfile dist/Browsify-universal.tar.gz.sig
+          openssl pkeyutl -verify -rawin -pubin -inkey "$public_file" -in dist/Browsify-arm64.tar.gz -sigfile dist/Browsify-arm64.tar.gz.sig
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -111,7 +110,7 @@ jobs:
         run: |
           cd dist
           sha256sum -c SHA256SUMS
-          printf '%s\n' 'Universal macOS build (Apple Silicon + Intel), macOS 12 or later.' '' \
+          printf '%s\n' 'Requires an Apple Silicon Mac (arm64) and macOS 12 or later. No Intel build is provided.' '' \
             'Not Apple-signed or notarized: macOS Gatekeeper may block initial installation. Install this release manually if upgrading from a check-only version. Subsequent updates use signed packages and require Restart to Update approval.' > release-notes.md
-          gh release create "$RELEASE_TAG" Browsify-universal.tar.gz Browsify-universal.tar.gz.sig SHA256SUMS \
+          gh release create "$RELEASE_TAG" Browsify-arm64.tar.gz Browsify-arm64.tar.gz.sig SHA256SUMS \
             --verify-tag --title "Browsify $RELEASE_TAG" --generate-notes --notes-file release-notes.md

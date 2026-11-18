@@ -14,12 +14,17 @@ fi
 
 # Apple Developer ID signing and notarization are deferred.
 # GitHub release builds embed BROWSIFY_UPDATE_PUBLIC_KEY; the publish job signs the archive.
-BUILD_UNIVERSAL=1 ./scripts/build.sh
+./scripts/build.sh
+architectures=$(lipo -archs apps/browsify/build/Browsify.app/Contents/MacOS/browsify)
+if [ "$architectures" != arm64 ]; then
+    echo "release: expected an arm64-only executable, found: $architectures" >&2
+    exit 1
+fi
 mkdir -p dist
-COPYFILE_DISABLE=1 tar -czf dist/Browsify-universal.tar.gz -C apps/browsify/build Browsify.app
+COPYFILE_DISABLE=1 tar -czf dist/Browsify-arm64.tar.gz -C apps/browsify/build Browsify.app
 (
     cd dist
-    shasum -a 256 Browsify-universal.tar.gz > SHA256SUMS
+    shasum -a 256 Browsify-arm64.tar.gz > SHA256SUMS
 )
-echo "release: unsigned universal bundle at apps/browsify/build/Browsify.app"
+echo "release: unsigned Apple Silicon bundle at apps/browsify/build/Browsify.app"
 echo "release: archive and checksums in dist/"

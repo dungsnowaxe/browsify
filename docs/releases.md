@@ -3,7 +3,7 @@
 ## Continuous integration
 
 CI runs Rust workspace tests and UI checks/tests on pull requests and pushes to
-`main`. These runs do not build or package the universal macOS app. Only the
+`main`. These runs do not build or package the macOS app. Only the
 Release workflow does that, when a release tag is pushed.
 
 ## Publish a stable release
@@ -21,10 +21,10 @@ Release workflow does that, when a release tag is pushed.
    ```
 
 The Release workflow rejects tags that do not match the Cargo version, runs Rust
-and UI checks/tests, builds for Apple Silicon and Intel (macOS 12+), and publishes:
+and UI checks/tests, builds for Apple Silicon (arm64) on macOS 12 or later, and publishes:
 
-- `Browsify-universal.tar.gz`
-- `Browsify-universal.tar.gz.sig` — detached Ed25519 update-package signature
+- `Browsify-arm64.tar.gz`
+- `Browsify-arm64.tar.gz.sig` — detached Ed25519 update-package signature
 - `SHA256SUMS`
 
 Publishing uses the workflow’s `GITHUB_TOKEN`. Signed updates also require the
@@ -36,17 +36,16 @@ if a release already exists, publishing fails rather than overwriting its assets
 
 ## Build locally
 
-On macOS, install Node.js 22, Rust, `jq`, and Xcode command line tools. From the
-repository root:
+On an Apple Silicon Mac, install Node.js 22, Rust, `jq`, and Xcode command line
+tools. From the repository root:
 
 ```sh
-rustup target add aarch64-apple-darwin x86_64-apple-darwin
 ./scripts/install.sh
 ./scripts/release.sh
 (cd dist && shasum -a 256 -c SHA256SUMS)
 ```
 
-This produces the universal app at `apps/browsify/build/Browsify.app` and the
+This produces the Apple Silicon app at `apps/browsify/build/Browsify.app` and the
 archive and checksums in `dist/`. The local release script does not create the
 detached update signature; the publish job does that separately.
 
