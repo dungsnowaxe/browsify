@@ -1,10 +1,10 @@
 <script lang="ts">
-  import { onDestroy } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import PageContainer from "../components/PageContainer.svelte";
   import BrowserProfileSelector from "../components/BrowserProfileSelector.svelte";
   import OptionRow from "../components/OptionRow.svelte";
   import { toast } from "../lib/toast";
-  import type { ConfigInfo, ConfigOptions, SettingsOverrides, UpdateInfo } from "../types";
+  import type { ConfigInfo, ConfigOptions, LoginItemStatus, SettingsOverrides, UpdateInfo } from "../types";
 
   export let hasConfig: boolean;
   export let config: ConfigInfo;
@@ -13,6 +13,14 @@
   export let settingsSaveState: "idle" | "saving" | "saved" | "error" = "idle";
   export let updateInfo: UpdateInfo | null = null;
   export let updateChecking = false;
+  export let loginItem: LoginItemStatus = "unavailable";
+  export let loginSaving = false;
+  onMount(() => {
+    const refresh = () => window.finicky.sendMessage({ type: "getLoginItem" });
+    refresh();
+    window.addEventListener("focus", refresh);
+    return () => window.removeEventListener("focus", refresh);
+  });
 
   let saveTimer: ReturnType<typeof setTimeout>;
   let pendingSave = false;
@@ -136,6 +144,9 @@
   <section class="behavior" aria-labelledby="behavior-heading">
     <div class="card-heading"><h2 id="behavior-heading">App behavior</h2><span class="save-note" role="status">{!hasConfig ? "Waiting for Browsify" : pendingSave || settingsSaveState === "saving" ? "Saving…" : settingsSaveState === "error" ? "Changes not saved" : settingsSaveState === "saved" ? "Changes saved" : "Changes save automatically"}</span></div>
     <div class="options-grid">
+      {#if loginItem !== "unavailable"}
+        <OptionRow label="Open at Login" hint={loginItem === "needsApproval" ? "Allow Browsify in System Settings → General → Login Items." : "Start Browsify when you sign in to your Mac."} checked={loginItem !== "off"} locked={loginSaving} onchange={() => window.finicky.sendMessage({ type: "setLoginItem", enabled: loginItem === "off" })} />
+      {/if}
       <OptionRow label="Keep running" hint="Stay available in the background" bind:checked={keepRunning} locked={!hasConfig} {onLockedClick} onchange={() => setOption("keepRunning", keepRunning)} />
       <OptionRow label="Hide menu bar icon" hint="Keep Browsify out of the menu bar" bind:checked={hideIcon} locked={!hasConfig} {onLockedClick} onchange={() => setOption("hideIcon", hideIcon)} />
       <OptionRow label="Log URL requests" hint="Write URL handling activity to a log" bind:checked={logRequests} locked={!hasConfig} {onLockedClick} onchange={() => setOption("logRequests", logRequests)} />

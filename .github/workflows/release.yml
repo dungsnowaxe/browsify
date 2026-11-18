@@ -16,7 +16,8 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 45
     env:
-      MACOSX_DEPLOYMENT_TARGET: '12.0'
+      # Keep publishing the bridge by default until it has shipped.
+      MACOSX_DEPLOYMENT_TARGET: ${{ vars.BROWSIFY_MACOS_13_RELEASES == 'true' && '13.0' || '12.0' }}
       RELEASE_TAG: ${{ github.ref_name }}
       BROWSIFY_UPDATE_PUBLIC_KEY: ${{ vars.BROWSIFY_UPDATE_PUBLIC_KEY }}
     steps:
@@ -62,13 +63,18 @@ jobs:
           shasum -a 256 -c SHA256SUMS
           staging=$(mktemp -d)
           trap 'rm -rf "$staging"' EXIT
-          tar -xzf Browsify-arm64.tar.gz -C "$staging"
+          archive=$(< archive-name.txt)
+          tar -xzf "$archive" -C "$staging"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$staging/Browsify.app/Contents/Info.plist")" = "$MACOSX_DEPLOYMENT_TARGET"
+          test "$(xcrun vtool -show-build "$staging/Browsify.app/Contents/MacOS/browsify" | awk '$1 == "minos" {print $2}')" = "$MACOSX_DEPLOYMENT_TARGET"
           codesign --verify --deep --strict "$staging/Browsify.app"
       - uses: actions/upload-artifact@v4
         with:
           name: release
           path: |
-            dist/Browsify-arm64.tar.gz
+            dist/*.tar.gz
+            dist/archive-name.txt
+            dist/minimum-macos.txt
             dist/SHA256SUMS
             dist/update-public-key.txt
           if-no-files-found: error
@@ -101,10 +107,15 @@ jobs:
           actual_public=$(tail -c 32 "$public_file" | base64 -w0)
           embedded_public=$(< dist/update-public-key.txt)
           test "$actual_public" = "$UPDATE_PUBLIC_KEY" && test "$actual_public" = "$embedded_public" || { echo 'Update signing key does not match embedded public key'; exit 1; }
-          openssl pkeyutl -sign -rawin -inkey "$key_file" -in dist/Browsify-arm64.tar.gz -out dist/Browsify-arm64.tar.gz.sig
-          test "$(wc -c < dist/Browsify-arm64.tar.gz.sig)" -eq 64
+          archive=$(< dist/archive-name.txt)
+          case "$(< dist/minimum-macos.txt):$archive" in
+            12.0:Browsify-arm64.tar.gz|13.0:Browsify-macos13-arm64.tar.gz) ;;
+            *) echo 'Invalid release asset or deployment target' >&2; exit 1 ;;
+          esac
+          openssl pkeyutl -sign -rawin -inkey "$key_file" -in "dist/$archive" -out "dist/$archive.sig"
+          test "$(wc -c < "dist/$archive.sig")" -eq 64
           openssl pkey -in "$key_file" -pubout > "$public_file"
-          openssl pkeyutl -verify -rawin -pubin -inkey "$public_file" -in dist/Browsify-arm64.tar.gz -sigfile dist/Browsify-arm64.tar.gz.sig
+          openssl pkeyutl -verify -rawin -pubin -inkey "$public_file" -in "dist/$archive" -sigfile "dist/$archive.sig"
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -113,7 +124,9 @@ jobs:
         run: |
           cd dist
           sha256sum -c SHA256SUMS
-          printf '%s\n' 'Requires an Apple Silicon Mac (arm64) and macOS 12 or later. No Intel build is provided.' '' \
+          archive=$(< archive-name.txt)
+          minimum=$(< minimum-macos.txt)
+          printf '%s\n' "Requires an Apple Silicon Mac (arm64) and macOS ${minimum%.0} or later. No Intel build is provided." '' \
             'Not Apple-signed or notarized: macOS Gatekeeper may block initial installation. Install this release manually if upgrading from a check-only version. Subsequent updates use signed packages and require Restart to Update approval.' > release-notes.md
-          gh release create "$RELEASE_TAG" Browsify-arm64.tar.gz Browsify-arm64.tar.gz.sig SHA256SUMS \
+          gh release create "$RELEASE_TAG" "$archive" "$archive.sig" SHA256SUMS \
             --verify-tag --title "Browsify $RELEASE_TAG" --generate-notes --notes-file release-notes.md

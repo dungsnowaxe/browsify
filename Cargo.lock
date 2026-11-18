@@ -57,9 +57,11 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
+ "sha2",
  "tar",
  "tempfile",
  "toml",
+ "toml_edit",
  "url",
 ]
 

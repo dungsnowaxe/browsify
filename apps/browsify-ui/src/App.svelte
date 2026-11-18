@@ -11,7 +11,7 @@
   import Rules from "./pages/Rules.svelte";
   import ToastContainer from "./components/ToastContainer.svelte";
   import AppearanceMenu from "./components/AppearanceMenu.svelte";
-  import type { LogEntry, UpdateInfo, ConfigInfo, RulesFile } from "./types";
+  import type { LogEntry, UpdateInfo, ConfigInfo, RulesFile, RuleEditor, RuleSource, Choice, ProfileChoices, LoginItemStatus } from "./types";
   import { receiveUrlTestResult } from "./lib/testUrlStore";
   import { toast } from "./lib/toast";
 
@@ -29,6 +29,14 @@
   let rulesFile: RulesFile = { defaultBrowser: "", rules: [] };
   let installedBrowsers: string[] = [];
   let profilesByBrowser: Record<string, string[]> = {};
+
+  let editor: RuleEditor | null = null;
+  let editorError = "";
+  let ruleSaving: RuleSource | null = null;
+  let browserChoices: Choice[] | null = null;
+  let profileChoices: Record<string, ProfileChoices> = {};
+  let loginItem: LoginItemStatus = "unavailable";
+  let loginSaving = false;
 
   $: numErrors = messageBuffer.filter(
     (msg) => msg.level.toLowerCase() === "error"
@@ -69,6 +77,30 @@
         break;
       case "testUrlResult":
         receiveUrlTestResult(parsedMsg.message, parsedMsg.requestId);
+        break;
+      case "ruleEditor":
+        editor = parsedMsg.message;
+        if (editor?.saved) {
+          ruleSaving = null;
+          toast.show("Rules saved", "info");
+          window.finicky.sendMessage({ type: "getRules" });
+        }
+        editorError = "";
+        break;
+      case "ruleEditorError":
+        editorError = parsedMsg.message.error;
+        if (parsedMsg.message.source) ruleSaving = null;
+        break;
+      case "browserChoices":
+        browserChoices = parsedMsg.message;
+        break;
+      case "profileChoices":
+        profileChoices = { ...profileChoices, [parsedMsg.message.browser]: parsedMsg.message };
+        break;
+      case "loginItem":
+        loginSaving = false;
+        loginItem = parsedMsg.message.status ?? "unavailable";
+        if (parsedMsg.message.error) toast.show("Could not change Open at Login", "error", parsedMsg.message.error);
         break;
       case "rules":
         rulesFile = parsedMsg.message;
@@ -116,6 +148,8 @@
 
   window.finicky = {
     sendMessage: (msg: any) => {
+      if (msg.type === "saveRuleEditor") { ruleSaving = msg.payload.source; editorError = ""; }
+      if (msg.type === "setLoginItem") loginSaving = true;
       if (msg.type === "checkForUpdates") { updateChecking = true; updateInfo = null; }
       if (window.webkit?.messageHandlers?.finicky) {
         window.webkit.messageHandlers.finicky.postMessage(JSON.stringify(msg));
@@ -150,6 +184,17 @@
             console.error("Browsify RPC error:", err);
             if (msg.type === "testUrl") {
               receiveUrlTestResult({ error: "Could not reach Browsify. Check the app is running, then try again." }, msg.requestId);
+            } else if (["saveRuleEditor", "getRuleEditor", "editAdvancedRules"].includes(msg.type)) {
+              ruleSaving = null;
+              editorError = "Could not reach Browsify. Your changes have not been confirmed.";
+            } else if (msg.type === "getBrowserChoices") {
+              browserChoices = [];
+              editorError = "Could not load installed browsers. Try refreshing the list.";
+            } else if (msg.type === "getProfileChoices") {
+              profileChoices = { ...profileChoices, [msg.browser]: { profiles: [], error: true } };
+            } else if (msg.type === "setLoginItem") {
+              loginSaving = false;
+              toast.show("Could not change Open at Login", "error", "Check that Browsify is running and try again.");
             } else if (savingSettings) {
               settingsSaveState = "error";
               toast.show("Could not save settings", "error", "Check that Browsify is running. If you just updated it, restart the app and try again.");
@@ -220,6 +265,8 @@
                   {installedBrowsers}
                   {profilesByBrowser}
                   {settingsSaveState}
+                  {loginItem}
+                  {loginSaving}
                   {updateInfo}
                   {updateChecking}
                 />
@@ -239,10 +286,11 @@
 
               <Route path="/rules">
                 <Rules
-                  {rulesFile}
-                  {installedBrowsers}
-                  {profilesByBrowser}
-                  hasPrimaryConfig={config.hasPrimaryConfig ?? false}
+                  {editor}
+                  {editorError}
+                  {ruleSaving}
+                  {browserChoices}
+                  {profileChoices}
                 />
               </Route>
             </div>

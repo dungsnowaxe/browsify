@@ -1,6 +1,7 @@
 mod config_loader;
 mod launcher;
 mod macos;
+mod rule_editor;
 mod ui_server;
 mod update;
 
