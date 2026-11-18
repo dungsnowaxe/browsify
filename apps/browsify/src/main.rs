@@ -154,7 +154,10 @@ fn main() {
         "list-profiles" => {
             let resolver = ProfileResolver::new(&home_dir);
             if let Some(browser) = positional.get(1) {
-                let profiles = resolver.list_profiles(browser);
+                let profiles = resolver.try_list_profiles(browser).unwrap_or_else(|error| {
+                    eprintln!("{}", error);
+                    std::process::exit(1);
+                });
                 if profiles.is_empty() {
                     println!("No profiles found for '{}'", browser);
                 } else {

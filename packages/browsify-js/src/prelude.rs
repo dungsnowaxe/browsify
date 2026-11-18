@@ -598,7 +598,9 @@ function resolveBrowserSpecJS(spec, url, options) {
     };
   }
   if (typeof resolved === "string") {
-    const [name, rawProfile] = resolved.split(":");
+    const sep = resolved.indexOf(":");
+    const name = sep >= 0 ? resolved.slice(0, sep) : resolved;
+    const rawProfile = sep >= 0 ? resolved.slice(sep + 1) : "";
     let profile = rawProfile || "";
     let container = undefined;
     if (profile.startsWith("container:")) {

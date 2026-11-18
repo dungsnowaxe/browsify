@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
 
 /// A parsed [Profile Selector](GLOSSARY.md): either a plain profile name or a
-/// `container:` prefix identifying a browser container.
+/// `container:` prefix identifying a browser container. A `workspace:` prefix
+/// (Zen workspace selector) stays in the plain profile part and is resolved by
+/// the profile resolver.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProfileSelector<'a> {
     Profile(&'a str),
@@ -292,7 +294,7 @@ pub const BROWSERS_REGISTRY: &[BrowserMeta] = &[
         config_dir_relative: "com.operasoftware.OperaGX",
         family: BrowserFamily::Chromium,
     },
-    // Dia (Chromium family)
+    // Dia uses Chromium, but profile discovery and targeting use native automation.
     BrowserMeta {
         id: "company.thebrowser.dia",
         app_name: "Dia",

@@ -12,3 +12,4 @@ url.workspace = true
 regex.workspace = true
 thiserror.workspace = true
 base64.workspace = true
+lz4_flex = "0.14.2"

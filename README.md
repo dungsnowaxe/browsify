@@ -79,6 +79,64 @@ browser = "work"
 Replace `Work` with an existing profile name and `myorg` with your organization.
 Links matching these rules open in your work profile; other links open in Safari.
 
+### Dia profiles on macOS
+
+Use `Dia` or `company.thebrowser.dia` with the profile's **exact, unique name**:
+
+```toml
+default_browser = "dia_work"
+
+[browsers.dia_work]
+name = "Dia"
+profile = "Work"
+```
+
+Keep Dia running with a browser window open. Browsify discovers profiles through
+Dia's native automation interface and creates the tab directly in the selected
+profile. macOS may require Automation permission for Browsify to control Dia.
+`browsify list-profiles Dia` lists the currently available names.
+
+Missing or duplicate names and automation failures do not fall back to another
+profile. Rename your saved selector when you rename a Dia profile. Profile-targeted
+launches cannot be combined with custom browser arguments, containers or app mode.
+An empty profile retains ordinary browser-default opening.
+
+Dia can share browsing data across profiles; disable that option in Dia when you
+need separate logins. Creating a tab selects its profile even with background
+opening; background mode only omits Browsify's explicit focus command. Browsify
+serializes its own Dia handoffs, but cannot guarantee isolation against profile
+changes made concurrently in Dia. A timeout may leave delivery uncertain, so
+Browsify does not retry automatically. Cold startup and profile creation are not
+part of this transport.
+
+### Zen workspaces on macOS
+
+Use `Zen` or `app.zen-browser.zen` with a `workspace:` Profile Selector naming a
+Zen workspace (space) by name or UUID:
+
+```toml
+default_browser = "zen_research"
+
+[browsers.zen_research]
+name = "Zen"
+profile = "workspace:Research"
+```
+
+Browsify lowers the selector to Zen's native `--space` flag and resolves it to
+the workspace's UUID right before opening, so the stable identity survives
+renames of other workspaces. `browsify list-profiles Zen` lists the current
+workspaces of your default Zen profile; add `args = ["--profile", "<path>"]` to
+target a specific Zen profile directory. A workspace missing at dispatch
+suppresses the open instead of falling back: Zen itself would still navigate in
+the active workspace. Ambiguous duplicate names are likewise rejected.
+
+A workspace is not itself a cookie boundary: cookies follow the container the
+workspace is bound to. Give workspaces separate containers in Zen when you need
+separate logins. `workspace:` selectors cannot be combined with `container:`,
+custom `--space`/`--new-window`/`--private-window` arguments. Zen's own
+per-website space-routing settings can still override where a link opens; a
+successful handoff does not override browser-native policy.
+
 Browsify also loads `~/.browsify.js`, `~/.browsify.ts`, `~/.finicky.js`, and
 `~/.finicky.ts`. For example:
 

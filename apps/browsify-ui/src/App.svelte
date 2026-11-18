@@ -76,6 +76,9 @@
       case "installedBrowsers":
         installedBrowsers = parsedMsg.message;
         break;
+      case "browserProfilesError":
+        toast.show("Could not load profiles", "error", parsedMsg.message.error);
+        break;
       case "browserProfiles":
         profilesByBrowser = {
           ...profilesByBrowser,

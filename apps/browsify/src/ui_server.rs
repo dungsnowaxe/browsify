@@ -860,7 +860,8 @@ fn handle_rpc(
                             "openInBackground": plan.open_in_background,
                             "profile": display_profile,
                             "args": plan.args,
-                            "warning": plan.warning
+                            "warning": plan.warning,
+                            "action": plan.action
                         }
                     })
                     .to_string()
@@ -883,7 +884,13 @@ fn handle_rpc(
         }
         "getBrowserProfiles" => {
             let browser = msg.get("browser").and_then(|v| v.as_str()).unwrap_or("");
-            let profiles = profile_resolver.list_profiles(browser);
+            let profiles = match profile_resolver.try_list_profiles(browser) {
+                Ok(profiles) => profiles,
+                Err(error) => return serde_json::json!({
+                    "type": "browserProfilesError",
+                    "message": { "browser": browser, "error": error }
+                }).to_string(),
+            };
             serde_json::json!({
                 "type": "browserProfiles",
                 "message": {

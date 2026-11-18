@@ -6,6 +6,7 @@ export interface ResolvedTestUrl {
   openInBackground: boolean;
   profile?: string;
   warning?: string;
+  action?: { kind: "open_application" } | { kind: "dia_profile"; profile: string };
 }
 
 export type TestUrlResult = ResolvedTestUrl | { error: string };

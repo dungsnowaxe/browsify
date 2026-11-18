@@ -25,8 +25,20 @@ impl Default for MissingProfilePolicy {
     }
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum LaunchAction {
+    #[default]
+    OpenApplication,
+    DiaProfile {
+        profile: String,
+    },
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResolvedLaunchPlan {
+    #[serde(default)]
+    pub action: LaunchAction,
     pub browser_name: String,
     pub app_type: AppType,
     pub open_in_background: bool,
@@ -110,6 +122,20 @@ impl ProfileResolver {
         let Some(meta) = lookup_browser_meta(identifier) else {
             return Vec::new();
         };
+        if meta.id == crate::dia::BUNDLE_ID {
+            return crate::dia::list_profiles().unwrap_or_default();
+        }
+        if meta.id == crate::zen::ZEN_BUNDLE_ID {
+            let names = self
+                .zen_workspace_profile_dir()
+                .ok()
+                .and_then(|dir| crate::zen::list_workspaces(&dir).ok())
+                .unwrap_or_default();
+            return names
+                .into_iter()
+                .map(|w| format!("workspace:{}", w.name))
+                .collect();
+        }
         match meta.family {
             BrowserFamily::Chromium => {
                 let path = self.local_state_path(meta.config_dir_relative);
@@ -141,6 +167,24 @@ impl ProfileResolver {
                 names
             }
             BrowserFamily::Safari => Vec::new(),
+        }
+    }
+
+    /// Preserve discovery errors for interactive consumers instead of showing an empty list.
+    pub fn try_list_profiles(&self, identifier: &str) -> Result<Vec<String>, String> {
+        if lookup_browser_meta(identifier).is_some_and(|m| m.id == crate::dia::BUNDLE_ID) {
+            crate::dia::list_profiles()
+        } else if lookup_browser_meta(identifier).is_some_and(|m| m.id == crate::zen::ZEN_BUNDLE_ID)
+        {
+            let dir = self.zen_workspace_profile_dir()?;
+            crate::zen::list_workspaces(&dir).map(|spaces| {
+                spaces
+                    .into_iter()
+                    .map(|w| format!("workspace:{}", w.name))
+                    .collect()
+            })
+        } else {
+            Ok(self.list_profiles(identifier))
         }
     }
 
@@ -200,6 +244,7 @@ impl ProfileResolver {
 
         if config.app_type == AppType::None || config.name.is_empty() {
             return ResolvedLaunchPlan {
+                action: LaunchAction::OpenApplication,
                 browser_name: String::new(),
                 app_type: AppType::None,
                 open_in_background,
@@ -209,6 +254,40 @@ impl ProfileResolver {
                 final_url: config.url.clone(),
                 warning: None,
             };
+        }
+
+        if lookup_browser_meta(&config.name).is_some_and(|m| m.id == crate::dia::BUNDLE_ID)
+            && (!config.profile.is_empty() || config.container.is_some())
+        {
+            let incompatible = !config.args.is_empty()
+                || config.container.is_some()
+                || matches!(
+                    ProfileSelector::parse(&config.profile),
+                    ProfileSelector::Container(_)
+                )
+                || config.app_mode == Some(true)
+                || config.app_id.is_some();
+            return ResolvedLaunchPlan {
+                action: LaunchAction::DiaProfile { profile: config.profile.clone() },
+                browser_name: config.name.clone(),
+                app_type: if incompatible { AppType::None } else { config.app_type },
+                open_in_background,
+                creates_new_instance: false,
+                activate_after_handoff: false,
+                args: Vec::new(),
+                final_url: config.url.clone(),
+                warning: incompatible.then(|| "Dia profile targeting cannot be combined with custom arguments, containers or app mode. No URL will be opened.".into()),
+            };
+        }
+
+        // Zen `workspace:` selectors use the browser's native `--space` flag.
+        // Zen still navigates when the workspace name is unknown, so a missing
+        // target always suppresses the launch instead of following the
+        // configured missing-profile policy.
+        if lookup_browser_meta(&config.name).is_some_and(|m| m.id == crate::zen::ZEN_BUNDLE_ID)
+            && workspace_selector(&config.profile).is_some()
+        {
+            return self.build_zen_workspace_plan(config, open_in_background);
         }
 
         let mut final_url = config.url.clone();
@@ -250,6 +329,7 @@ impl ProfileResolver {
                     warning = Some(msg);
                     if missing_policy == MissingProfilePolicy::Suppress {
                         return ResolvedLaunchPlan {
+                            action: LaunchAction::OpenApplication,
                             browser_name: config.name.clone(),
                             app_type: AppType::None,
                             open_in_background,
@@ -296,6 +376,7 @@ impl ProfileResolver {
         let activate_after_handoff = creates_new_instance && !open_in_background;
 
         ResolvedLaunchPlan {
+            action: LaunchAction::OpenApplication,
             browser_name: config.name.clone(),
             app_type: config.app_type,
             open_in_background,
@@ -305,6 +386,85 @@ impl ProfileResolver {
             final_url,
             warning,
         }
+    }
+
+    /// Resolves a Zen `workspace:` selector into the browser's native
+    /// `--space` flag. The plan carries the selector verbatim; the launcher
+    /// validates it against Zen's session store at dispatch and resolves it to
+    /// the stable workspace UUID. A missing or ambiguous workspace suppresses
+    /// the launch there regardless of the missing-profile policy: Zen still
+    /// navigates when a workspace name is unknown, so falling back would leak
+    /// the URL into the active workspace.
+    fn build_zen_workspace_plan(
+        &self,
+        config: &BrowserConfig,
+        open_in_background: bool,
+    ) -> ResolvedLaunchPlan {
+        let selector = workspace_selector(&config.profile).unwrap_or_default();
+        let suppressed = |warning: String| ResolvedLaunchPlan {
+            action: LaunchAction::OpenApplication,
+            browser_name: config.name.clone(),
+            app_type: AppType::None,
+            open_in_background,
+            creates_new_instance: false,
+            activate_after_handoff: false,
+            args: Vec::new(),
+            final_url: config.url.clone(),
+            warning: Some(warning),
+        };
+
+        if selector.is_empty() {
+            return suppressed(
+                "Zen workspace selector 'workspace:' needs a workspace name or UUID.".into(),
+            );
+        }
+        if config.container.is_some() {
+            return suppressed(
+                "Zen workspace targeting cannot be combined with a container. No URL will be opened.".into(),
+            );
+        }
+        if let Some(flag) = config.args.iter().find(|a| {
+            a.as_str() == "--space"
+                || a.starts_with("--space=")
+                || a.as_str() == "--new-window"
+                || a.as_str() == "--private-window"
+                || a.starts_with("--private-window=")
+        }) {
+            return suppressed(format!(
+                "Zen workspace targeting cannot be combined with the custom argument '{}'. No URL will be opened.",
+                flag
+            ));
+        }
+
+        let mut args = config.args.clone();
+        args.push("--space".to_string());
+        args.push(selector.to_string());
+        ResolvedLaunchPlan {
+            action: LaunchAction::OpenApplication,
+            browser_name: config.name.clone(),
+            app_type: config.app_type,
+            open_in_background,
+            creates_new_instance: true,
+            activate_after_handoff: !open_in_background,
+            args,
+            final_url: config.url.clone(),
+            warning: None,
+        }
+    }
+
+    /// The Zen profile directory a `workspace:` selector applies to: an
+    /// explicit `--profile <dir>` or `-P <name>` custom argument when present,
+    /// otherwise the default profile from Zen's `profiles.ini`.
+    fn zen_profile_dir(&self, config: &BrowserConfig) -> Result<PathBuf, String> {
+        let root = self.home_dir.join("Library/Application Support").join("zen");
+        crate::zen::profile_dir(&root, &config.args)
+    }
+
+    /// The default Zen profile directory, for discovery and validation without
+    /// a Browser Target's custom arguments.
+    fn zen_workspace_profile_dir(&self) -> Result<PathBuf, String> {
+        let root = self.home_dir.join("Library/Application Support").join("zen");
+        crate::zen::profile_dir(&root, &[])
     }
 
     pub fn resolve_profile_args(
@@ -324,6 +484,17 @@ impl ProfileResolver {
                 identifier
             ));
         };
+
+        if meta.id == crate::dia::BUNDLE_ID {
+            return Err("Dia profiles use native automation, not Chromium directory flags".into());
+        }
+
+        if meta.id == crate::zen::ZEN_BUNDLE_ID && workspace_selector(profile).is_some() {
+            return Err(
+                "Zen workspaces resolve through the dedicated --space launch path, not profile flags"
+                    .into(),
+            );
+        }
 
         match meta.family {
             BrowserFamily::Chromium => {
@@ -351,9 +522,10 @@ impl ProfileResolver {
                     return Ok(vec![format!("--profile-directory={}", hit.dir_key)]);
                 }
                 // Priority 3: Signed-in email / user_name match (e.g. "alice@corp.com")
-                if let Some(hit) = entries.iter().find(|p| {
-                    !p.user_name.is_empty() && p.user_name.eq_ignore_ascii_case(profile)
-                }) {
+                if let Some(hit) = entries
+                    .iter()
+                    .find(|p| !p.user_name.is_empty() && p.user_name.eq_ignore_ascii_case(profile))
+                {
                     return Ok(vec![format!("--profile-directory={}", hit.dir_key)]);
                 }
                 // Priority 4: Directory key match ("Default", "Profile 1")
@@ -435,6 +607,20 @@ impl ProfileResolver {
                 ))
             }
             BrowserFamily::Safari => Err("Safari does not support CLI profile flags".to_string()),
+        }
+    }
+
+    pub fn validate_profile(&self, identifier: &str, profile: &str) -> Result<(), String> {
+        if lookup_browser_meta(identifier).is_some_and(|m| m.id == crate::dia::BUNDLE_ID) {
+            crate::dia::validate_profile(profile)
+        } else if lookup_browser_meta(identifier).is_some_and(|m| m.id == crate::zen::ZEN_BUNDLE_ID)
+            && workspace_selector(profile).is_some()
+        {
+            let dir = self.zen_workspace_profile_dir()?;
+            crate::zen::resolve_workspace(&dir, workspace_selector(profile).unwrap_or_default())
+                .map(|_| ())
+        } else {
+            self.resolve_profile_args(identifier, profile).map(|_| ())
         }
     }
 
@@ -559,8 +745,68 @@ impl ProfileResolver {
     }
 }
 
-fn extract_plist_string_key(xml: &str, key: &str) -> Option<String> {
-    let needle = format!("<key>{}</key>", key);
+/// The payload of a `workspace:` Profile Selector, when present.
+pub fn workspace_selector(profile: &str) -> Option<&str> {
+    profile.strip_prefix("workspace:")
+}
+
+fn expand_home(value: &str, home_dir: &Path) -> PathBuf {
+    if let Some(rest) = value.strip_prefix("~/") {
+        home_dir.join(rest)
+    } else {
+        PathBuf::from(value)
+    }
+}
+
+/// Parses `profiles.ini` into `(name, path, is_relative, is_default)` tuples
+/// plus the install-section `Default=` path when present.
+fn parse_firefox_profiles_ini(text: &str) -> (Vec<(String, String, bool, bool)>, Option<String>) {
+    let mut profiles = Vec::new();
+    let mut current: Option<(String, String, bool, bool)> = None;
+    let mut install_default = None;
+    let mut in_install_section = false;
+    for line in text.lines() {
+        let line = line.trim();
+        if let Some(section) = line.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
+            if let Some(entry) = current.take() {
+                profiles.push(entry);
+            }
+            in_install_section = section.trim().to_ascii_lowercase().starts_with("install");
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else { continue };
+        let key = key.trim();
+        let value = value.trim();
+        match (in_install_section, key) {
+            (true, "Default") => install_default = Some(value.to_string()),
+            (false, "Name") => {
+                current.get_or_insert_with(default_ini_entry).0 = value.to_string();
+            }
+            (false, "Path") => {
+                current.get_or_insert_with(default_ini_entry).1 = value.to_string();
+            }
+            (false, "IsRelative") => {
+                current.get_or_insert_with(default_ini_entry).2 = value == "1";
+            }
+            (false, "Default") => {
+                if value == "1" {
+                    current.get_or_insert_with(default_ini_entry).3 = true;
+                }
+            }
+            _ => {}
+        }
+    }
+    if let Some(entry) = current.take() {
+        profiles.push(entry);
+    }
+    (profiles, install_default)
+}
+
+fn default_ini_entry() -> (String, String, bool, bool) {
+    (String::new(), String::new(), true, false)
+}
+
+fn extract_plist_string_key(xml: &str, key: &str) -> Option<String> {    let needle = format!("<key>{}</key>", key);
     let idx = xml.find(&needle)?;
     let after = &xml[idx + needle.len()..];
     let s_start = after.find("<string>")? + "<string>".len();
@@ -649,6 +895,176 @@ mod tests {
     }
 
     #[test]
+    fn dia_native_plan_preserves_data_and_rejects_conflicting_contexts() {
+        let resolver = ProfileResolver::new("/nonexistent-fixture-home");
+        let mut cfg = BrowserConfig::from_spec_str(
+            "company.thebrowser.dia",
+            "https://example.test/a?x=1&y=%22",
+        );
+        cfg.profile = "Team \"A\"\nΔ".into();
+        let plan = resolver.build_launch_plan(&cfg, true, MissingProfilePolicy::WarnAndFallback);
+        assert_eq!(
+            plan.action,
+            LaunchAction::DiaProfile {
+                profile: cfg.profile.clone()
+            }
+        );
+        assert_eq!(plan.final_url, cfg.url);
+        assert!(plan.open_in_background);
+        assert!(plan.args.is_empty());
+        assert!(!plan.creates_new_instance);
+        let roundtrip: ResolvedLaunchPlan =
+            serde_json::from_str(&serde_json::to_string(&plan).unwrap()).unwrap();
+        assert_eq!(roundtrip, plan);
+        for conflict in 0..5 {
+            let mut invalid = cfg.clone();
+            match conflict {
+                0 => invalid.args.push("--profile-directory=Default".into()),
+                1 => invalid.container = Some("Personal".into()),
+                2 => invalid.profile = "container:Personal".into(),
+                3 => invalid.app_mode = Some(true),
+                _ => invalid.app_id = Some("app".into()),
+            }
+            let rejected =
+                resolver.build_launch_plan(&invalid, false, MissingProfilePolicy::WarnAndFallback);
+            assert_eq!(rejected.app_type, AppType::None);
+            assert!(rejected.warning.is_some());
+            assert_eq!(rejected.final_url, cfg.url);
+        }
+        cfg.profile.clear();
+        let default = resolver.build_launch_plan(&cfg, false, MissingProfilePolicy::Suppress);
+        assert_eq!(default.action, LaunchAction::OpenApplication);
+        assert_eq!(default.app_type, AppType::BundleId);
+    }
+
+    #[test]
+    fn dia_profiles_are_not_chromium_directory_selectors() {
+        let home = make_temp_home();
+        let resolver = ProfileResolver::new(&home);
+        assert!(resolver.resolve_profile_args("Dia", "Profile 1").is_err());
+        fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
+    fn zen_workspace_plan_carries_native_space_flag_and_rejects_conflicts() {
+        let home = make_temp_home();
+        let resolver = ProfileResolver::new(&home);
+        let mut cfg = BrowserConfig::from_spec_str("Zen", "https://example.test/a?x=1&y=%22");
+        cfg.profile = "workspace:Research \"Δ\"".into();
+        for policy in [MissingProfilePolicy::WarnAndFallback, MissingProfilePolicy::Suppress] {
+            let plan = resolver.build_launch_plan(&cfg, true, policy);
+            assert_eq!(plan.action, LaunchAction::OpenApplication);
+            assert_eq!(plan.args, vec!["--space", "Research \"Δ\""]);
+            assert_eq!(plan.final_url, cfg.url);
+            assert!(plan.creates_new_instance);
+            assert!(plan.warning.is_none());
+            assert_eq!(plan.app_type, AppType::AppName);
+        }
+
+        // Empty selector, container and conflicting custom flags suppress.
+        let mut invalid = cfg.clone();
+        invalid.profile = "workspace:".into();
+        let rejected = resolver.build_launch_plan(&invalid, false, MissingProfilePolicy::WarnAndFallback);
+        assert_eq!(rejected.app_type, AppType::None);
+        assert!(rejected.warning.is_some());
+        for conflict in 0..3 {
+            let mut invalid = cfg.clone();
+            match conflict {
+                0 => invalid.args.push("--space=Other".into()),
+                1 => invalid.container = Some("Personal".into()),
+                _ => invalid.args.push("--new-window".into()),
+            }
+            let rejected =
+                resolver.build_launch_plan(&invalid, false, MissingProfilePolicy::WarnAndFallback);
+            assert_eq!(rejected.app_type, AppType::None);
+            assert!(rejected.warning.is_some());
+            assert_eq!(rejected.final_url, cfg.url);
+            assert!(rejected.args.is_empty());
+        }
+
+        // Custom --profile arguments are preserved for dispatch-time validation.
+        let mut explicit = cfg.clone();
+        explicit.args.push("--profile".into());
+        explicit.args.push("/tmp/browsify-zen-test-profile".into());
+        let plan = resolver.build_launch_plan(&explicit, true, MissingProfilePolicy::WarnAndFallback);
+        assert_eq!(plan.args.first().map(|s| s.as_str()), Some("--profile"));
+        assert!(plan.args.contains(&"--space".to_string()));
+
+        // Untargeted Zen keeps the plain application-open path.
+        let mut untargeted = cfg.clone();
+        untargeted.profile.clear();
+        let plain = resolver.build_launch_plan(&untargeted, false, MissingProfilePolicy::Suppress);
+        assert_eq!(plain.action, LaunchAction::OpenApplication);
+        assert_eq!(plain.app_type, AppType::AppName);
+        assert!(plain.args.is_empty());
+        fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
+    fn zen_workspace_resolution_uses_uuid_then_unique_case_insensitive_name() {
+        let home = make_temp_home();
+        let zen_root = home.join("Library/Application Support/zen");
+        let profile_dir = zen_root.join("Profiles/testws");
+        fs::create_dir_all(&profile_dir).unwrap();
+        let spaces = serde_json::json!({"spaces": [
+            {"uuid": "uuid-a", "name": "Alpha"},
+            {"uuid": "uuid-b", "name": "beta"},
+            {"uuid": "uuid-c", "name": "beta"}
+        ]});
+        fs::write(
+            profile_dir.join("zen-sessions.jsonlz4"),
+            build_mozlz4(&spaces.to_string()),
+        )
+        .unwrap();
+        fs::write(
+            zen_root.join("profiles.ini"),
+            "[Profile0]\nName=main\nIsRelative=1\nPath=Profiles/testws\nDefault=1\n",
+        )
+        .unwrap();
+
+        let resolver = ProfileResolver::new(&home);
+        assert_eq!(
+            resolver.try_list_profiles("Zen").unwrap(),
+            vec!["workspace:Alpha", "workspace:beta", "workspace:beta"]
+        );
+        assert!(resolver.validate_profile("Zen", "workspace:uuid-b").is_ok());
+        assert!(resolver.validate_profile("Zen", "workspace:ALPHA").is_ok());
+        assert!(resolver.validate_profile("Zen", "workspace:beta").is_err()); // ambiguous
+        assert!(resolver
+            .validate_profile("Zen", "workspace:missing")
+            .is_err());
+
+        let mut cfg = BrowserConfig::from_spec_str("Zen", "https://example.test/");
+        cfg.profile = "workspace:alpha".into();
+        let plan = resolver.build_launch_plan(&cfg, false, MissingProfilePolicy::Suppress);
+        assert_eq!(plan.args, vec!["--space", "alpha"]);
+        fs::remove_dir_all(home).unwrap();
+    }
+
+    /// Builds a minimal `mozLz40\0` archive with literals-only LZ4 framing so
+    /// the resolver's decompressor can be exercised without a dependency.
+    fn build_mozlz4(json: &str) -> Vec<u8> {
+        let data = json.as_bytes();
+        let mut out = Vec::with_capacity(data.len() + data.len() / 255 + 16);
+        out.extend_from_slice(b"mozLz40\0");
+        out.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        let n = data.len();
+        if n < 15 {
+            out.push((n as u8) << 4);
+        } else {
+            out.push(15 << 4);
+            let mut rem = n - 15;
+            while rem >= 255 {
+                out.push(255);
+                rem -= 255;
+            }
+            out.push(rem as u8);
+        }
+        out.extend_from_slice(data);
+        out
+    }
+
+    #[test]
     fn test_chromium_profile_by_name_email_and_dir() {
         let home = make_temp_home();
         let resolver = ProfileResolver::new(&home);
@@ -733,8 +1149,7 @@ mod tests {
         assert!(warn_plan.warning.is_some());
 
         // Suppress: refuses to launch
-        let suppress_plan =
-            resolver.build_launch_plan(&cfg, false, MissingProfilePolicy::Suppress);
+        let suppress_plan = resolver.build_launch_plan(&cfg, false, MissingProfilePolicy::Suppress);
         assert_eq!(suppress_plan.app_type, AppType::None);
         assert!(suppress_plan.warning.is_some());
 

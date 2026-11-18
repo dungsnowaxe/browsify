@@ -84,6 +84,12 @@
           </div>
         {/if}
       </div>
+      {#if browser === "Dia" || browser === "company.thebrowser.dia"}
+        <p class="availability-note">Keep a Dia window open. Use a unique, exact profile name. Profiles can share browsing data if enabled in Dia.</p>
+      {/if}
+      {#if browser === "Zen" || browser === "app.zen-browser.zen"}
+        <p class="availability-note">Zen profiles here are workspaces (spaces). Open Zen once so its workspace list is available. A missing workspace suppresses the open instead of falling back.</p>
+      {/if}
     </div>
   {/if}
 </div>

@@ -48,6 +48,12 @@
         {#if result.url !== $testUrlSubmitted || !compact}
           <div class="final-url"><span>Final URL</span><p>{result.url}</p></div>
         {/if}
+        {#if result.action?.kind === "dia_profile"}
+          <p class="profile-name">Dia must have an open window. The exact profile name is checked when opening the link.</p>
+        {/if}
+        {#if result.profile?.startsWith("workspace:")}
+          <p class="profile-name">Zen targets the workspace with its native --space flag. A missing workspace suppresses the open instead of falling back.</p>
+        {/if}
         {#if result.warning}<p class="result-warning">{result.warning}</p>{/if}
       {/if}
     {:else}
