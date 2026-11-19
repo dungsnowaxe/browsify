@@ -1,0 +1,59 @@
+---
+import logo from '../../../../assets/brand/browsify-logo.svg?url';
+import chrome from '../../../browsify-ui/public/icons/chrome.svg?url';
+import safari from '../../../browsify-ui/public/icons/safari.svg?url';
+import firefox from '../../../browsify-ui/public/icons/firefox.svg?url';
+
+const routes = [
+  { opener: 'Slack', url: 'github.com', browser: 'Chrome', target: 'Work profile', icon: chrome },
+  { opener: 'Mail', url: 'letterboxd.com', browser: 'Safari', target: 'Personal browsing', icon: safari },
+  { opener: 'Notes', url: 'developer.mozilla.org', browser: 'Firefox', target: 'Research container', icon: firefox },
+];
+---
+<figure class="signal-deck" data-signal aria-label="Example link routes through Browsify">
+  <div class="deck-head"><span>Incoming link</span><span>Browser target</span></div>
+  <dl class="deck-lines">
+    {routes.map(({ opener, url, browser, target, icon }) => (
+      <div class="deck-row">
+        <dt><small>From {opener}</small><strong>{url}</strong></dt>
+        <dd class="signal-line" aria-hidden="true"></dd>
+        <dd class="destination"><img src={icon} alt="" width="32" height="32" /><span><strong>{browser}</strong><small>{target}</small></span></dd>
+      </div>
+    ))}
+  </dl>
+  <div class="deck-foot">
+    <span><img src={logo} alt="" width="28" height="28" />Your rules, in action</span>
+    <button class="motion-toggle" type="button" data-motion-toggle hidden>Pause animation</button>
+  </div>
+</figure>
+<script>
+  const board = document.querySelector<HTMLElement>('[data-signal]');
+  const toggle = board?.querySelector<HTMLButtonElement>('[data-motion-toggle]');
+
+  if (board && toggle) {
+    const deck = board;
+    const control = toggle;
+    const motion = matchMedia('(prefers-reduced-motion: reduce)');
+    let paused = false;
+    let inView = false;
+
+    function sync() {
+      const reduced = motion.matches;
+      control.hidden = reduced;
+      control.textContent = paused ? 'Play animation' : 'Pause animation';
+      deck.toggleAttribute('data-animate', !reduced);
+      deck.toggleAttribute('data-playing', !reduced && !paused && inView && !document.hidden);
+    }
+
+    control.addEventListener('click', () => { paused = !paused; sync(); });
+    motion.addEventListener('change', sync);
+    document.addEventListener('visibilitychange', sync);
+
+    const observer = new IntersectionObserver(([entry]) => {
+      inView = entry.isIntersecting && entry.intersectionRatio >= 0.15;
+      sync();
+    }, { threshold: 0.15 });
+    observer.observe(deck);
+    sync();
+  }
+</script>
