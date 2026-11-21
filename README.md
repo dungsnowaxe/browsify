@@ -224,9 +224,9 @@ this week, consider sponsoring it. The first goal is to cover the **US$99/year
 [Apple Developer Program membership](https://developer.apple.com/programs/enroll/)**
 so I can sign and notarize future releases and make them easier to install on macOS.
 
-GitHub Sponsors is pending approval. I’ll add a link here once it’s live.
-Browsify will stay free and open source. In the meantime, a bug report or a link
-shared with someone who also has too many browser profiles goes a long way.
+[Sponsor Browsify on GitHub](https://github.com/sponsors/dungsnowaxe) to help
+cover this cost. Sponsorship is optional and does not unlock features. Bug
+reports, contributions, and sharing the project are also welcome ways to help.
 
 ## Credits and license
 
