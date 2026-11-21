@@ -163,9 +163,9 @@ Membership would allow the maintainer to set up Developer ID signing and Apple
 notarization, making installation easier. Enrollment alone does not sign or
 notarize the app; that release workflow still needs to be implemented.
 
-A donation link is not available yet. Financial support will be optional and will
-not unlock features. Until then, bug reports, contributions, and sharing the
-project are welcome ways to help.
+[Sponsor Browsify on GitHub](https://github.com/sponsors/dungsnowaxe) to help
+cover this cost. Sponsorship is optional and does not unlock features. Bug
+reports, contributions, and sharing the project are also welcome ways to help.
 
 ## Credits and license
 
