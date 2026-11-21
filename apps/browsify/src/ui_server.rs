@@ -12,7 +12,6 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const MAX_LOG_BUFFER: usize = 200;
-const MAX_RECENT_URLS: usize = 10;
 const IDLE_SHUTDOWN_GRACE: Duration = Duration::from_secs(30);
 const MAX_HTTP_HEADERS: usize = 16 * 1024;
 const MAX_HTTP_BODY: usize = 1024 * 1024;
@@ -41,14 +40,6 @@ pub struct LogEntry {
     pub time: u128,
     pub level: String,
     pub msg: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RecentRoutedUrl {
-    pub input_url: String,
-    pub final_url: String,
-    pub browser: String,
-    pub profile: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -113,7 +104,6 @@ impl UpdateInfo {
 
 struct GlobalTelemetryState {
     logs: VecDeque<LogEntry>,
-    recent_urls: VecDeque<RecentRoutedUrl>,
     sse_clients: Vec<TcpStream>,
     update_info: Option<UpdateInfo>,
     active_ui_url: Option<String>,
@@ -125,7 +115,6 @@ fn telemetry() -> &'static Mutex<GlobalTelemetryState> {
     TELEMETRY.get_or_init(|| {
         Mutex::new(GlobalTelemetryState {
             logs: VecDeque::with_capacity(MAX_LOG_BUFFER),
-            recent_urls: VecDeque::with_capacity(MAX_RECENT_URLS),
             sse_clients: Vec::new(),
             update_info: None,
             active_ui_url: None,
@@ -164,30 +153,6 @@ pub fn log_event(level: LogLevel, msg: impl Into<String>) {
         guard.logs.push_back(entry);
         broadcast_sse_locked(&mut guard, &sse_payload);
     }
-}
-
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-pub fn record_routed_url(input_url: &str, final_url: &str, browser: &str, profile: &str) {
-    if let Ok(mut guard) = telemetry().lock() {
-        guard.recent_urls.retain(|r| r.input_url != input_url);
-        guard.recent_urls.push_front(RecentRoutedUrl {
-            input_url: input_url.to_string(),
-            final_url: final_url.to_string(),
-            browser: browser.to_string(),
-            profile: profile.to_string(),
-        });
-        while guard.recent_urls.len() > MAX_RECENT_URLS {
-            guard.recent_urls.pop_back();
-        }
-    }
-}
-
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
-pub fn get_recent_routed_urls() -> Vec<RecentRoutedUrl> {
-    telemetry()
-        .lock()
-        .map(|g| g.recent_urls.iter().cloned().collect())
-        .unwrap_or_default()
 }
 
 pub fn set_update_info(info: UpdateInfo) {
@@ -230,14 +195,18 @@ pub fn spawn_or_open_ui_server(
     engine: Arc<Mutex<BrowsifyEngine>>,
     profile_resolver: Arc<ProfileResolver>,
 ) {
+    open_ui_at(engine, profile_resolver, "/");
+}
+
+pub fn open_ui_at(engine: Arc<Mutex<BrowsifyEngine>>, profile_resolver: Arc<ProfileResolver>, page: &'static str) {
     if let Ok(guard) = telemetry().lock() {
         if let Some(existing_url) = &guard.active_ui_url {
-            open_url_in_system_browser(existing_url);
+            open_url_in_system_browser(&existing_url.replacen("/?", &format!("{page}?"), 1));
             return;
         }
     }
     thread::spawn(move || {
-        let _ = run_ui_server(engine, profile_resolver, 0, true);
+        let _ = run_ui_server_at(engine, profile_resolver, 0, true, page);
     });
 }
 
@@ -250,6 +219,10 @@ pub fn run_ui_server(
     port: u16,
     open_browser: bool,
 ) -> Result<(), String> {
+    run_ui_server_at(engine, profile_resolver, port, open_browser, "/")
+}
+
+fn run_ui_server_at(engine: Arc<Mutex<BrowsifyEngine>>, profile_resolver: Arc<ProfileResolver>, port: u16, open_browser: bool, page: &str) -> Result<(), String> {
     let listener = TcpListener::bind(("127.0.0.1", port))
         .map_err(|e| format!("Failed to bind UI server on 127.0.0.1:{}: {}", port, e))?;
     let local_addr = listener.local_addr().map_err(|e| e.to_string())?;
@@ -267,7 +240,7 @@ pub fn run_ui_server(
     );
 
     if open_browser {
-        open_url_in_system_browser(&url);
+        open_url_in_system_browser(&url.replacen("/?", &format!("{page}?"), 1));
     }
 
     let stop_flag = Arc::new(AtomicBool::new(false));
@@ -732,6 +705,53 @@ fn handle_rpc(
                 }
             }
         }
+        "getRuleEditor" | "saveRuleEditor" => {
+            let mut eng = engine.lock().unwrap();
+            let saving = msg_type == "saveRuleEditor";
+            let result = if saving {
+                serde_json::from_value(msg["payload"].clone()).map_err(|e| e.to_string())
+                    .and_then(|request| crate::rule_editor::save(&mut eng, request))
+            } else {
+                if eng.check_files_changed() {
+                    if let Err(error) = eng.reload() {
+                        return event_value("ruleEditorError", serde_json::json!({"error": error})).to_string();
+                    }
+                }
+                crate::rule_editor::snapshot(&eng)
+            };
+            match result {
+                Ok(groups) => {
+                    if saving { notify_config_reloaded(&eng); }
+                    event_value("ruleEditor", serde_json::json!({"groups": groups, "saved": saving.then(|| msg["payload"]["source"].clone())})).to_string()
+                }
+                Err(error) => event_value("ruleEditorError", serde_json::json!({"error": error, "source": msg["payload"]["source"]})).to_string(),
+            }
+        }
+        "editAdvancedRules" => {
+            let path = engine.lock().unwrap().primary_config_path().map(Path::to_path_buf);
+            match path.ok_or_else(|| "There is no advanced rules file.".to_owned()).and_then(|p| crate::macos::open_in_textedit(&p)) {
+                Ok(()) => "[]".into(),
+                Err(error) => event_value("ruleEditorError", serde_json::json!({"error": error})).to_string(),
+            }
+        }
+        "getBrowserChoices" => event_value("browserChoices", serde_json::json!(crate::macos::installed_browsers(profile_resolver))).to_string(),
+        "getProfileChoices" => {
+            let browser = msg["browser"].as_str().unwrap_or("");
+            match profile_resolver.profile_choices(browser) {
+                Ok(profiles) => event_value("profileChoices", serde_json::json!({"browser": browser, "profiles": profiles})).to_string(),
+                Err(_) => event_value("profileChoices", serde_json::json!({"browser": browser, "error": true, "profiles": []})).to_string(),
+            }
+        }
+        "getLoginItem" | "setLoginItem" => {
+            let enabled = msg["enabled"].as_bool();
+            let result = if msg_type == "setLoginItem" && enabled.is_none() {
+                Err("Choose whether to open at login.".into())
+            } else { crate::macos::login_item(enabled.filter(|_| msg_type == "setLoginItem")) };
+            match result {
+                Ok(status) => event_value("loginItem", serde_json::json!({"status": status})).to_string(),
+                Err(error) => event_value("loginItem", serde_json::json!({"error": error, "status": crate::macos::login_item(None).ok()})).to_string(),
+            }
+        }
         "getRules" => {
             let rules_path = engine.lock().unwrap().rules_path();
             let rf = RulesFile::load_from_path(&rules_path).unwrap_or_default();
@@ -860,7 +880,8 @@ fn handle_rpc(
                             "openInBackground": plan.open_in_background,
                             "profile": display_profile,
                             "args": plan.args,
-                            "warning": plan.warning
+                            "warning": plan.warning,
+                            "action": plan.action
                         }
                     })
                     .to_string()
@@ -883,7 +904,13 @@ fn handle_rpc(
         }
         "getBrowserProfiles" => {
             let browser = msg.get("browser").and_then(|v| v.as_str()).unwrap_or("");
-            let profiles = profile_resolver.list_profiles(browser);
+            let profiles = match profile_resolver.try_list_profiles(browser) {
+                Ok(profiles) => profiles,
+                Err(error) => return serde_json::json!({
+                    "type": "browserProfilesError",
+                    "message": { "browser": browser, "error": error }
+                }).to_string(),
+            };
             serde_json::json!({
                 "type": "browserProfiles",
                 "message": {
@@ -1129,6 +1156,88 @@ mod tests {
             fs::remove_file(settings_path).unwrap();
         }
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn visual_editor_preserves_primary_precedence_and_rejects_stale_writes() {
+        use serde_json::{Value, json};
+        let source = r#"# hand-authored
+    [options]
+    check_for_updates = false
+
+    # first handler
+    [[handlers]]
+    match = "*example.test/*"
+    browser = "Safari" # keep this comment
+
+    # exact hostname stays as authored
+    [[handlers]]
+    match_hostnames = ["other.test"]
+    browser = "Firefox"
+
+    [[rewrite]]
+    match = "*example.test/*"
+    force_https = true
+    "#;
+        let root = tempfile::tempdir().unwrap();
+        let primary_path = root.path().join("primary.toml");
+        let rules_path = root.path().join("custom/rules.json");
+        let default_rules = RulesFile::default_path(root.path());
+        fs::create_dir_all(rules_path.parent().unwrap()).unwrap();
+        fs::create_dir_all(default_rules.parent().unwrap()).unwrap();
+        fs::write(&primary_path, source).unwrap();
+        let visual_rules = r#"{"options":{"keepRunning":false},"rules":[]}"#;
+        fs::write(&rules_path, visual_rules).unwrap();
+        fs::write(&default_rules, r#"{"rules":[]}"#).unwrap();
+        let eng = Arc::new(Mutex::new(BrowsifyEngine::load(root.path(), Some(&primary_path), Some(&rules_path), false).unwrap()));
+        let resolver = Arc::new(ProfileResolver::new(root.path()));
+        let rpc = |message: Value| -> Value {
+            serde_json::from_str(&handle_rpc(&message.to_string(), &eng, &resolver)).unwrap()
+        };
+        let default_before = fs::read(&default_rules).unwrap();
+        let catalog = rpc(json!({"type":"getRuleEditor"}));
+        assert_eq!(catalog["type"], "ruleEditor");
+        let primary = &catalog["message"]["groups"][0];
+        let visual = &catalog["message"]["groups"][1];
+        assert_eq!(primary["source"], "primary");
+        assert_eq!(primary["rows"][0]["rule"]["browser"], "Safari");
+        assert_eq!(primary["rows"][1]["rule"], Value::Null);
+        assert_eq!(primary["rewrites"][0], "*example.test/*");
+        assert_eq!(visual["source"], "visual");
+        let result = rpc(json!({"type":"saveRuleEditor", "payload":{
+            "source":"visual", "revision":visual["revision"], "rows":[
+                {"rule":{"match":"*example.test/*", "browser":"com.google.Chrome"}},
+                {"rule":{"match":"*fallback.test/*", "browser":"org.mozilla.firefox"}}
+            ]
+        }}));
+        assert_eq!(result["message"]["saved"], "visual", "{result}");
+        let route = |url| rpc(json!({"type":"testUrl", "url":url}))["message"].clone();
+        assert_eq!(route("http://example.test/new")["browser"], "Safari");
+        assert_eq!(route("http://example.test/new")["url"], "https://example.test/new");
+        assert_eq!(route("https://fallback.test/")["browser"], "org.mozilla.firefox");
+        assert_eq!(fs::read_to_string(&primary_path).unwrap(), source);
+        assert_eq!(fs::read(&default_rules).unwrap(), default_before);
+        let saved_visual: Value = serde_json::from_slice(&fs::read(&rules_path).unwrap()).unwrap();
+        assert_eq!(saved_visual["options"]["keepRunning"], false);
+
+        let edit = json!({"type":"saveRuleEditor", "payload":{
+            "source":"primary", "revision":primary["revision"], "rows":[
+                {"id":0, "rule":{"match":"*example.test/*", "browser":"Microsoft Edge"}},
+                {"id":1}
+            ]
+        }});
+        let result = rpc(edit.clone());
+        assert_eq!(result["message"]["saved"], "primary", "{result}");
+        assert_eq!(route("https://example.test/")["browser"], "Microsoft Edge");
+        let expected = source.replace("\"Safari\"", "\"Microsoft Edge\"");
+        let after = fs::read_to_string(&primary_path).unwrap();
+        assert_eq!(after, expected);
+        let changed = format!("{after}\n# edited in TextEdit\n");
+        fs::write(&primary_path, &changed).unwrap();
+        let rejected = rpc(edit);
+        assert_eq!(rejected["type"], "ruleEditorError");
+        assert!(rejected["message"]["error"].as_str().unwrap().contains("changed on disk"));
+        assert_eq!(fs::read_to_string(&primary_path).unwrap(), changed);
     }
 
     #[test]

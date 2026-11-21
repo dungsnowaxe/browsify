@@ -409,7 +409,24 @@ fn newer(candidate: &str, current: &str) -> bool {
         _ => false,
     }
 }
-fn parse_release(bytes: &[u8]) -> Result<Option<Release>, String> {
+const LEGACY_ARCHIVE: &str = "Browsify-arm64.tar.gz";
+const MODERN_ARCHIVE: &str = "Browsify-macos13-arm64.tar.gz";
+
+fn macos_version(value: &str) -> Option<(u32, u32, u32)> {
+    let mut parts = value.trim().split('.');
+    let version = (parts.next()?.parse().ok()?, parts.next().unwrap_or("0").parse().ok()?, parts.next().unwrap_or("0").parse().ok()?);
+    parts.next().is_none().then_some(version)
+}
+
+fn running_macos() -> Result<(u32, u32, u32), String> {
+    let output = Command::new("/usr/bin/sw_vers").arg("-productVersion").output().map_err(|e| e.to_string())?;
+    if output.status.success() {
+        if let Some(version) = macos_version(&String::from_utf8_lossy(&output.stdout)) { return Ok(version); }
+    }
+    Err("Could not check this Mac’s operating system version.".into())
+}
+
+fn parse_release(bytes: &[u8], os: (u32, u32, u32)) -> Result<Option<Release>, String> {
     let json: serde_json::Value = serde_json::from_slice(bytes).map_err(|e| e.to_string())?;
     let tag = json["tag_name"].as_str().ok_or("Release has no version")?;
     if json["draft"] == true || json["prerelease"] == true || !newer(tag, env!("CARGO_PKG_VERSION"))
@@ -431,18 +448,25 @@ fn parse_release(bytes: &[u8]) -> Result<Option<Release>, String> {
         }
         Ok(url.to_owned())
     };
+    let has = |name| assets.iter().any(|a| a["name"].as_str() == Some(name));
+    let archive = if has(MODERN_ARCHIVE) && os >= (13, 0, 0) { MODERN_ARCHIVE }
+        else if has(MODERN_ARCHIVE) && !has(LEGACY_ARCHIVE) { return Ok(None); }
+        else { LEGACY_ARCHIVE };
     Ok(Some(Release {
         version: tag.to_owned(),
         url: format!("https://github.com/dungsnowaxe/browsify/releases/tag/{tag}"),
-        archive: asset("Browsify-universal.tar.gz")?,
-        signature: asset("Browsify-universal.tar.gz.sig")?,
+        archive: asset(archive)?,
+        signature: asset(&format!("{archive}.sig"))?,
     }))
 }
 fn fetch_release(generation: u64) -> Result<Option<Release>, String> {
+    if cfg!(all(target_os = "macos", target_arch = "x86_64")) {
+        return Ok(None); // Official releases are Apple Silicon only.
+    }
     let temp = tempfile::tempdir().map_err(|e| e.to_string())?;
     let path = temp.path().join("release.json");
     fetch(RELEASES, &path, 1024 * 1024, generation)?;
-    parse_release(&fs::read(path).map_err(|e| e.to_string())?)
+    parse_release(&fs::read(path).map_err(|e| e.to_string())?, running_macos()?)
 }
 
 fn verify(archive: &Path, signature: &Path, public_key: &str) -> Result<(), String> {
@@ -708,6 +732,14 @@ fn validate_bundle(app: &Path, version: &str) -> Result<(), String> {
         if !output.status.success() || String::from_utf8_lossy(&output.stdout).trim() != expected {
             return Err("Update bundle identity or version does not match the release".into());
         }
+    }
+    let minimum = Command::new("/usr/libexec/PlistBuddy")
+        .args(["-c", "Print :LSMinimumSystemVersion"])
+        .arg(&plist).output().map_err(|e| e.to_string())?;
+    let required = macos_version(&String::from_utf8_lossy(&minimum.stdout))
+        .filter(|_| minimum.status.success()).ok_or("The update did not specify a valid macOS requirement.")?;
+    if running_macos()? < required {
+        return Err(format!("This update requires macOS {}.{} or later.", required.0, required.1));
     }
     let exe = app.join("Contents/MacOS/browsify");
     if !exe.is_file() || !app.join("Contents/Resources/ui/index.html").is_file() {
@@ -1099,27 +1131,36 @@ mod tests {
             serde_json::json!({
                 "tag_name": "v999.0.0", "draft": false, "prerelease": false,
                 "assets": [
-                    {"name": "Browsify-universal.tar.gz", "browser_download_url": format!("{origin}/Browsify-universal.tar.gz")},
-                    {"name": "Browsify-universal.tar.gz.sig", "browser_download_url": format!("{origin}/Browsify-universal.tar.gz.sig")}
+                    {"name": "Browsify-arm64.tar.gz", "browser_download_url": format!("{origin}/Browsify-arm64.tar.gz")},
+                    {"name": "Browsify-arm64.tar.gz.sig", "browser_download_url": format!("{origin}/Browsify-arm64.tar.gz.sig")}
                 ]
             })
         };
         let valid = make("https://github.com/dungsnowaxe/browsify/releases/download/v999.0.0");
-        let release = parse_release(&serde_json::to_vec(&valid).unwrap())
+        let release = parse_release(&serde_json::to_vec(&valid).unwrap(), (13, 0, 0))
             .unwrap()
             .unwrap();
         assert_eq!(release.version, "v999.0.0");
         assert!(parse_release(
-            &serde_json::to_vec(&make("https://untrusted.example/update")).unwrap()
+            &serde_json::to_vec(&make("https://untrusted.example/update")).unwrap(), (13, 0, 0)
         )
         .is_err());
         let mut missing_signature = valid.clone();
         missing_signature["assets"].as_array_mut().unwrap().pop();
-        assert!(parse_release(&serde_json::to_vec(&missing_signature).unwrap()).is_err());
+        assert!(parse_release(&serde_json::to_vec(&missing_signature).unwrap(), (13, 0, 0)).is_err());
+        let mut modern = valid.clone();
+        for asset in modern["assets"].as_array_mut().unwrap() {
+            for field in ["name", "browser_download_url"] {
+                asset[field] = asset[field].as_str().unwrap().replace(LEGACY_ARCHIVE, MODERN_ARCHIVE).into();
+            }
+        }
+        let modern = serde_json::to_vec(&modern).unwrap();
+        assert!(parse_release(&modern, (12, 7, 6)).unwrap().is_none());
+        assert!(parse_release(&modern, (13, 0, 0)).unwrap().unwrap().archive.ends_with(MODERN_ARCHIVE));
         for flag in ["draft", "prerelease"] {
             let mut hidden = valid.clone();
             hidden[flag] = true.into();
-            assert!(parse_release(&serde_json::to_vec(&hidden).unwrap())
+            assert!(parse_release(&serde_json::to_vec(&hidden).unwrap(), (13, 0, 0))
                 .unwrap()
                 .is_none());
         }

@@ -13,9 +13,14 @@
 
 ## Why Browsify?
 
-Keep work links in your work profile, personal links in your personal browser,
-and meeting links where you want them. Set Browsify as your default browser and
-it routes links opened from other apps using your rules.
+I juggle enough work accounts that clicking a link felt like playing browser
+roulette. [Finicky](https://github.com/johnste/finicky) got me most of the way
+there, but it didn’t have a few features I wanted. So I thought, “Why not fork
+it and vibe away?” 🤣 Anyway, now there’s a Rust app.
+
+Set Browsify as your default browser and it routes links opened from other apps
+using your rules. Keep work links in your work profile, personal links in your
+personal browser, and meeting links wherever you want them.
 
 - **Browser and profile routing** — choose a browser, a Chromium or Firefox profile,
   or a Firefox container for matching links.
@@ -30,9 +35,10 @@ it routes links opened from other apps using your rules.
 
 ## Installation
 
-Requires **macOS 12 or later**, on Apple Silicon or Intel.
+New builds require **macOS 13 or later** on an **Apple Silicon Mac**. The last macOS 12-compatible build remains available in GitHub Releases. Intel builds aren’t
+maintained. If you need one, [open an issue](https://github.com/dungsnowaxe/browsify/issues).
 
-1. Download `Browsify-universal.tar.gz` from [GitHub Releases](https://github.com/snowaxe/browsify/releases).
+1. Download `Browsify-macos13-arm64.tar.gz` (or `Browsify-arm64.tar.gz` for the macOS 12 bridge) from [GitHub Releases](https://github.com/snowaxe/browsify/releases).
 2. Extract the archive and move **Browsify.app** to **Applications**.
 3. Open Browsify, then follow the setup below.
 
@@ -78,6 +84,64 @@ browser = "work"
 
 Replace `Work` with an existing profile name and `myorg` with your organization.
 Links matching these rules open in your work profile; other links open in Safari.
+
+### Dia profiles on macOS
+
+Use `Dia` or `company.thebrowser.dia` with the profile's **exact, unique name**:
+
+```toml
+default_browser = "dia_work"
+
+[browsers.dia_work]
+name = "Dia"
+profile = "Work"
+```
+
+Keep Dia running with a browser window open. Browsify discovers profiles through
+Dia's native automation interface and creates the tab directly in the selected
+profile. macOS may require Automation permission for Browsify to control Dia.
+`browsify list-profiles Dia` lists the currently available names.
+
+Missing or duplicate names and automation failures do not fall back to another
+profile. Rename your saved selector when you rename a Dia profile. Profile-targeted
+launches cannot be combined with custom browser arguments, containers or app mode.
+An empty profile retains ordinary browser-default opening.
+
+Dia can share browsing data across profiles; disable that option in Dia when you
+need separate logins. Creating a tab selects its profile even with background
+opening; background mode only omits Browsify's explicit focus command. Browsify
+serializes its own Dia handoffs, but cannot guarantee isolation against profile
+changes made concurrently in Dia. A timeout may leave delivery uncertain, so
+Browsify does not retry automatically. Cold startup and profile creation are not
+part of this transport.
+
+### Zen workspaces on macOS
+
+Use `Zen` or `app.zen-browser.zen` with a `workspace:` Profile Selector naming a
+Zen workspace (space) by name or UUID:
+
+```toml
+default_browser = "zen_research"
+
+[browsers.zen_research]
+name = "Zen"
+profile = "workspace:Research"
+```
+
+Browsify lowers the selector to Zen's native `--space` flag and resolves it to
+the workspace's UUID right before opening, so the stable identity survives
+renames of other workspaces. `browsify list-profiles Zen` lists the current
+workspaces of your default Zen profile; add `args = ["--profile", "<path>"]` to
+target a specific Zen profile directory. A workspace missing at dispatch
+suppresses the open instead of falling back: Zen itself would still navigate in
+the active workspace. Ambiguous duplicate names are likewise rejected.
+
+A workspace is not itself a cookie boundary: cookies follow the container the
+workspace is bound to. Give workspaces separate containers in Zen when you need
+separate logins. `workspace:` selectors cannot be combined with `container:`,
+custom `--space`/`--new-window`/`--private-window` arguments. Zen's own
+per-website space-routing settings can still override where a link opens; a
+successful handoff does not override browser-native policy.
 
 Browsify also loads `~/.browsify.js`, `~/.browsify.ts`, `~/.finicky.js`, and
 `~/.finicky.ts`. For example:
@@ -149,19 +213,16 @@ cargo test --workspace --locked
 (cd apps/browsify-ui && npm run check && npm test)
 ```
 
-For universal builds, release publishing, and update signing, see the
+For macOS builds, release publishing, and update signing, see the
 [release guide](docs/releases.md). Contributions are welcome: open an issue to
 discuss a change or send a focused pull request with tests where appropriate.
 
 ## Support
 
-Browsify is free and open source. The immediate funding goal is to cover the
-**Apple Developer Program membership: US$99 per year**, with regional pricing
-where applicable ([Apple’s pricing](https://developer.apple.com/programs/enroll/)).
-
-Membership would allow the maintainer to set up Developer ID signing and Apple
-notarization, making installation easier. Enrollment alone does not sign or
-notarize the app; that release workflow still needs to be implemented.
+If Browsify saves you from signing into the wrong account for the tenth time
+this week, consider sponsoring it. The first goal is to cover the **US$99/year
+[Apple Developer Program membership](https://developer.apple.com/programs/enroll/)**
+so I can sign and notarize future releases and make them easier to install on macOS.
 
 [Sponsor Browsify on GitHub](https://github.com/sponsors/dungsnowaxe) to help
 cover this cost. Sponsorship is optional and does not unlock features. Bug

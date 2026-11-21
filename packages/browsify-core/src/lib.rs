@@ -1,4 +1,5 @@
 pub mod browser;
+pub mod dia;
 pub mod migrate;
 pub mod profile;
 pub mod router;
@@ -6,6 +7,7 @@ pub mod rules;
 pub mod shorturl;
 pub mod sqlite_profiles;
 pub mod wildcard;
+pub mod zen;
 
 use serde::{Deserialize, Serialize};
 
@@ -14,11 +16,11 @@ pub use browser::{
     BrowserMeta, ProfileSelector, BROWSERS_REGISTRY,
 };
 pub use migrate::rules_file_to_toml;
-pub use profile::{MissingProfilePolicy, ProfileResolver, ResolvedLaunchPlan};
+pub use profile::{LaunchAction, MissingProfilePolicy, ProfileResolver, ResolvedLaunchPlan};
 pub use router::{
-    compile_json_rules, decode_protocol_url, ExplicitOptions, inherit_rules_file_options,
-    rules_file_default_browser, CompiledHandler, CompiledMatcher, CompiledRewrite, CompiledTransform,
-    ConfigOptions, HostnamePattern, NativeRouter,
+    compile_json_rules, decode_protocol_url, inherit_rules_file_options,
+    rules_file_default_browser, CompiledHandler, CompiledMatcher, CompiledRewrite,
+    CompiledTransform, ConfigOptions, ExplicitOptions, HostnamePattern, NativeRouter,
 };
 pub use rules::{
     Rule, RulesFile, RulesOptions, TomlBrowserSpec, TomlBrowserTarget, TomlConfig, TomlHandlerRule,
@@ -26,6 +28,7 @@ pub use rules::{
 };
 pub use shorturl::{is_short_url, resolve_short_url, SHORTENER_DOMAINS};
 pub use wildcard::{compile_wildcard, match_wildcard};
+pub use zen::{list_workspaces, resolve_workspace, ZenWorkspace, ZEN_BUNDLE_ID};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

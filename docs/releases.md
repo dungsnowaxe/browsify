@@ -3,14 +3,17 @@
 ## Continuous integration
 
 CI runs Rust workspace tests and UI checks/tests on pull requests and pushes to
-`main`. The macOS build workflow also produces an unsigned universal app artifact.
+`main`. These runs do not build or package the macOS app. Only the
+Release workflow does that, when a release tag is pushed.
 
 ## Publish a stable release
 
 1. Update `[workspace.package].version` in `Cargo.toml` and run
    `cargo check --workspace` to refresh the workspace versions in `Cargo.lock`.
 2. Commit the version changes and merge to `main` after CI passes.
-3. Tag that commit and push the tag (substitute your version):
+3. Tag that commit and push the tag (substitute your version). The tag starts
+   the Release workflow, which creates the GitHub Release after the build and
+   update signing succeed. Do not create the GitHub Release manually.
 
    ```sh
    git tag v0.1.0
@@ -18,11 +21,23 @@ CI runs Rust workspace tests and UI checks/tests on pull requests and pushes to
    ```
 
 The Release workflow rejects tags that do not match the Cargo version, runs Rust
-and UI checks/tests, builds for Apple Silicon and Intel (macOS 12+), and publishes:
+and UI checks/tests, and publishes the Apple Silicon (arm64) archive, its detached
+Ed25519 `.sig` file, and `SHA256SUMS`.
 
-- `Browsify-universal.tar.gz`
-- `Browsify-universal.tar.gz.sig` — detached Ed25519 update-package signature
-- `SHA256SUMS`
+### Transition to macOS 13
+
+1. Leave the repository variable `BROWSIFY_MACOS_13_RELEASES` unset for the bridge.
+   Publish and verify this release on macOS 12. It uses `Browsify-arm64.tar.gz`
+   and can recognize newer archives without installing them on macOS 12.
+2. Once the bridge is available, set `BROWSIFY_MACOS_13_RELEASES=true` before
+   tagging the next release. Its only archive is `Browsify-macos13-arm64.tar.gz`.
+   Never publish the macOS 13 build under the old archive name. Keep the bridge
+   downloadable. Users on macOS 13+ who skipped it can upgrade manually.
+3. Keep the repository variable enabled for future releases. Verify the ad
+   hoc-signed app can enable, disable, and launch at login before release.
+
+Local builds default to macOS 13. Use `MACOSX_DEPLOYMENT_TARGET=12.0 ./scripts/release.sh`
+only for preparing a macOS 12 bridge bundle.
 
 Publishing uses the workflow’s `GITHUB_TOKEN`. Signed updates also require the
 repository variable `BROWSIFY_UPDATE_PUBLIC_KEY` and secret
@@ -33,23 +48,23 @@ if a release already exists, publishing fails rather than overwriting its assets
 
 ## Build locally
 
-On macOS, install Node.js 22, Rust, `jq`, and Xcode command line tools. From the
-repository root:
+On an Apple Silicon Mac, install Node.js 22, Rust, `jq`, and Xcode command line
+tools. From the repository root:
 
 ```sh
-rustup target add aarch64-apple-darwin x86_64-apple-darwin
 ./scripts/install.sh
 ./scripts/release.sh
 (cd dist && shasum -a 256 -c SHA256SUMS)
 ```
 
-This produces the universal app at `apps/browsify/build/Browsify.app` and the
+This produces the Apple Silicon app at `apps/browsify/build/Browsify.app` and the
 archive and checksums in `dist/`. The local release script does not create the
 detached update signature; the publish job does that separately.
 
-Release builds are **not Apple Developer ID–signed or notarized**. Update-package
-signing does not replace Apple signing or notarization, so Gatekeeper may block
-initial installation.
+Release bundles are ad hoc-signed to seal their contents, and CI verifies the
+bundle after extracting the archive. Neither ad hoc signing nor update-package
+signing replaces Developer ID signing or notarization, so Gatekeeper may still
+block initial installation.
 
 ## Update behavior
 

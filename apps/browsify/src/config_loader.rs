@@ -219,11 +219,21 @@ impl BrowsifyEngine {
             if ext == "json" {
                 let rf: RulesFile = serde_json::from_str(&source)
                     .map_err(|e| format!("Failed parsing JSON config: {}", e))?;
-                let router = NativeRouter::from_rules_file(&rf);
+                let mut router = NativeRouter::from_rules_file(&rf);
+                // A JSON Primary Config has the same priority as TOML and JS/TS.
+                if cfg_path != rules_path && fs::canonicalize(&cfg_path).ok() != fs::canonicalize(&rules_path).ok() {
+                    let explicit = rf.options.as_ref();
+                    router.apply_rules_file_fallbacks(&rules_file, ExplicitOptions {
+                        keep_running: explicit.and_then(|o| o.keep_running).is_some(),
+                        hide_icon: explicit.and_then(|o| o.hide_icon).is_some(),
+                        log_requests: explicit.and_then(|o| o.log_requests).is_some(),
+                        check_for_updates: explicit.and_then(|o| o.check_for_updates).is_some(),
+                    });
+                }
                 let summary = ConfigSummary::for_native(
                     "JSON Rules (Native)".to_string(),
                     Some(cfg_path.clone()),
-                    false,
+                    true,
                     &router,
                 );
                 return Ok(Self::assemble(
@@ -354,6 +364,17 @@ impl BrowsifyEngine {
             .unwrap_or_else(|| RulesFile::default_path(&self.home_dir))
     }
 
+    pub fn primary_config_path(&self) -> Option<&Path> {
+        self.primary_config_path.as_deref()
+    }
+
+    pub fn scripted_rules(&self) -> Option<serde_json::Value> {
+        match &self.backend {
+            EngineBackend::Js(engine) => Some(engine.describe_rules()),
+            _ => None,
+        }
+    }
+
     pub fn settings_path(&self) -> PathBuf {
         self.rules_path().with_extension("settings.json")
     }
@@ -437,7 +458,7 @@ impl BrowsifyEngine {
     pub fn validate_profiles(&self, resolver: &ProfileResolver) -> Vec<String> {
         let mut warnings = Vec::new();
         for (browser, profile) in &self.summary.referenced_profiles {
-            if let Err(err) = resolver.resolve_profile_args(browser, profile) {
+            if let Err(err) = resolver.validate_profile(browser, profile) {
                 warnings.push(err);
             }
         }
@@ -614,14 +635,9 @@ pub fn migrate_config(
                 if !rep.referenced_profiles.is_empty() {
                     report_str.push_str("\nReferenced Browser Profiles:\n");
                     for (browser, profile) in &rep.referenced_profiles {
-                        match resolver.resolve_profile_args(browser, profile) {
-                            Ok(flags) => {
-                                report_str.push_str(&format!(
-                                    "  ✓ {} -> {:?} ({})\n",
-                                    browser,
-                                    profile,
-                                    flags.join(" ")
-                                ));
+                        match resolver.validate_profile(browser, profile) {
+                            Ok(()) => {
+                                report_str.push_str(&format!("  ✓ {} -> {:?}\n", browser, profile));
                             }
                             Err(warn) => {
                                 report_str.push_str(&format!(

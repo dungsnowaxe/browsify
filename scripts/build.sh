@@ -2,6 +2,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+export MACOSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET:-13.0}
 VERSION=$(cargo metadata --no-deps --locked --format-version 1 | jq -r '.packages[] | select(.name == "browsify") | .version')
 
 # Build browsify-ui
@@ -17,46 +18,16 @@ copy_assets() {
     cp apps/browsify/assets/Info.plist "${APP_DIR}/Contents/Info.plist"
     /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION}" "${APP_DIR}/Contents/Info.plist"
     /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${VERSION}" "${APP_DIR}/Contents/Info.plist"
+    /usr/libexec/PlistBuddy -c "Set :LSMinimumSystemVersion ${MACOSX_DEPLOYMENT_TARGET}" "${APP_DIR}/Contents/Info.plist"
     cp -r apps/browsify/assets/Resources/* "${APP_DIR}/Contents/Resources/"
 }
 
-build_arch() {
-    local RUST_TARGET=$1
-    local ARCH_LABEL=$2
-    local APP_DIR="apps/browsify/build/Browsify-${ARCH_LABEL}.app"
+APP_DIR="apps/browsify/build/Browsify.app"
+rm -rf "${APP_DIR}"
+mkdir -p "${APP_DIR}/Contents/MacOS"
 
-    mkdir -p "${APP_DIR}/Contents/MacOS"
-    mkdir -p "${APP_DIR}/Contents/Resources"
-
-    cargo build --locked --release --target "${RUST_TARGET}" -p browsify
-    cp "target/${RUST_TARGET}/release/browsify" "${APP_DIR}/Contents/MacOS/browsify"
-}
-
-if [ "${BUILD_UNIVERSAL:-0}" = "1" ]; then
-    build_arch aarch64-apple-darwin arm64
-    build_arch x86_64-apple-darwin amd64
-
-    APP_DIR="apps/browsify/build/Browsify.app"
-    rm -rf "${APP_DIR}"
-    mkdir -p "${APP_DIR}/Contents/MacOS"
-    mkdir -p "${APP_DIR}/Contents/Resources"
-
-    lipo -create \
-        apps/browsify/build/Browsify-arm64.app/Contents/MacOS/browsify \
-        apps/browsify/build/Browsify-amd64.app/Contents/MacOS/browsify \
-        -output "${APP_DIR}/Contents/MacOS/browsify"
-
-    lipo -info "${APP_DIR}/Contents/MacOS/browsify"
-    copy_assets "${APP_DIR}"
-else
-    APP_DIR="apps/browsify/build/Browsify.app"
-    rm -rf "${APP_DIR}"
-    mkdir -p "${APP_DIR}/Contents/MacOS"
-    mkdir -p "${APP_DIR}/Contents/Resources"
-
-    cargo build --locked --release -p browsify
-    cp target/release/browsify "${APP_DIR}/Contents/MacOS/browsify"
-    copy_assets "${APP_DIR}"
-fi
+cargo build --locked --release -p browsify
+cp target/release/browsify "${APP_DIR}/Contents/MacOS/browsify"
+copy_assets "${APP_DIR}"
 
 echo "Build complete ✨ (${APP_DIR})"

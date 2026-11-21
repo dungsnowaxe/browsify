@@ -1,3 +1,9 @@
+## JavaScript tooling
+
+- Use Node.js 24.22.1 (see `.node-version`).
+- Use pnpm for `apps/landing`, with the version pinned in its `package.json`. From the repo root, run `pnpm -C apps/landing install --frozen-lockfile` and `pnpm -C apps/landing build`. Keep its `pnpm-lock.yaml` up to date; do not generate an npm lockfile there.
+- The desktop UI in `apps/browsify-ui` still uses its existing npm lockfile and CI commands.
+
 ## Agent skills
 
 ### Issue tracker

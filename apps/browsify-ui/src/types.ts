@@ -4,6 +4,14 @@ export interface Rule {
   profile?: string;
 }
 
+export interface Choice { id: string; label: string; aliases: string[] }
+export type RuleSource = "primary" | "visual";
+export interface EditorRow { id?: number | null; rule?: Rule | null; description?: string }
+export interface EditorGroup { source: RuleSource; revision?: string | null; rows: EditorRow[]; rewrites?: string[] }
+export interface RuleEditor { groups: EditorGroup[]; saved?: RuleSource | null }
+export interface ProfileChoices { profiles: Choice[]; error?: boolean }
+export type LoginItemStatus = "unavailable" | "off" | "on" | "needsApproval";
+
 export interface ConfigOptions {
   keepRunning: boolean;
   hideIcon: boolean;

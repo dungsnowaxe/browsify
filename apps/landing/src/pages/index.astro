@@ -1,0 +1,65 @@
+---
+import logo from '../../../../assets/brand/browsify-logo.svg?url';
+import DownloadLink from '../components/DownloadLink.astro';
+import SignalBoard from '../components/SignalBoard.astro';
+import '../styles/landing.css';
+
+const repo = 'https://github.com/snowaxe/browsify';
+const description = 'Browsify routes links to the browser profile you choose on your Mac.';
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Browsify | Browser and profile router for Mac</title>
+    <meta name="description" content={description} />
+    <meta property="og:title" content="Browsify for Mac" />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    <link rel="icon" href={logo} type="image/svg+xml" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <header class="site-head">
+      <nav class="container nav" aria-label="Header">
+        <a class="brand" href="#main"><img src={logo} alt="" width="36" height="36" />Browsify</a>
+        <a class="nav-link" href={repo}>GitHub</a>
+      </nav>
+    </header>
+    <main id="main" tabindex="-1">
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="container opening">
+          <div class="intro">
+            <h1 id="hero-title">Every link in its place.</h1>
+            <p class="lead">Send links to the right browser profile on your Mac.</p>
+            <DownloadLink />
+          </div>
+          <SignalBoard />
+        </div>
+      </section>
+      <section class="feature" aria-labelledby="routing-title">
+        <div class="container split">
+          <div><h2 id="routing-title">Choose where links open.</h2><p>As your default browser, Browsify matches the URL or opener.</p></div>
+          <ul class="steps">
+            <li><strong>Work links</strong><span>Open GitHub in your work profile.</span></li>
+            <li><strong>Personal links</strong><span>Keep Safari as your fallback.</span></li>
+            <li><strong>Research links</strong><span>Send documentation to a Firefox container.</span></li>
+          </ul>
+        </div>
+      </section>
+      <section class="close" aria-labelledby="get-title">
+        <div class="container split">
+          <div><h2 id="get-title">Browsify for Mac</h2><p>Read the <a href={repo + '#installation'}>installation notes</a> before opening the app.</p></div>
+          <DownloadLink />
+        </div>
+      </section>
+    </main>
+    <footer class="site-foot">
+      <div class="container foot">
+        <a class="brand" href="#main"><img src={logo} alt="" width="36" height="36" />Browsify</a>
+        <nav aria-label="Footer"><a class="nav-link" href={repo + '#getting-started'}>Getting started</a><a class="nav-link" href={repo + '/blob/main/LICENSE'}>MIT license</a></nav>
+      </div>
+    </footer>
+  </body>
+</html>
