@@ -738,7 +738,7 @@ globalThis.__browsifyInspectConfig = function () {
         });
       } else {
         allStatic = false;
-        rewrites.push({ static: false });
+        rewrites.push({ static: false, matcher: m.static ? m : undefined });
       }
     }
   }
@@ -752,7 +752,7 @@ globalThis.__browsifyInspectConfig = function () {
         handlers.push({ static: true, matcher: m, browser: b.spec });
       } else {
         allStatic = false;
-        handlers.push({ static: false });
+        handlers.push({ static: false, matcher: m.static ? m : undefined, browser: b.static ? b.spec : undefined });
       }
     }
   }

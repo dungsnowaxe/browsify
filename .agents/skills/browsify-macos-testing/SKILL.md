@@ -48,9 +48,9 @@ Typical commands, after confirming they remain supported:
 
 ```sh
 cargo test --workspace
-npm --prefix apps/browsify-ui test
-npm --prefix apps/browsify-ui run check
-npm --prefix apps/browsify-ui run build
+npm --prefix apps/ui test
+npm --prefix apps/ui run check
+npm --prefix apps/ui run build
 git diff --check
 ```
 

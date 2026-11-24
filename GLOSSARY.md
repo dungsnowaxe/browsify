@@ -11,16 +11,11 @@ The external application that initiated a URL open request, characterized by its
 _Avoid_: Caller, sender, source app
 
 **Primary Config**:
-The user-authored configuration file that defines rewrites, highest-priority handlers, and baseline settings, including the default browser.
+The single TOML file that defines Browsify’s Rewrite Rules, ordered Handler Rules, and user-configured settings, including the default browser. Users can edit it directly or save changes from Browsify’s UI.
 _Avoid_: Script, main config
 
-**UI Rules File**:
-The visual-editor rules configuration whose Handler Rules are evaluated after those in the Primary Config.
-_Avoid_: Cached rules, secondary config
-
-**Settings Override**:
-An explicit user preference selected in the UI that takes priority over the corresponding Primary Config setting or built-in default. Removing it restores the underlying setting without changing the Primary Config.
-_Avoid_: Config rewrite, fallback setting
+**Config Draft**:
+The unsaved edits to the Primary Config shared by open Browsify UI tabs in the same browser profile and UI session. The edits become active after a successful save and reload, and the user can discard them when closing the last tab.
 
 **Rewrite Rule**:
 A rule that matches an incoming URL and mutates or replaces it before handler evaluation.

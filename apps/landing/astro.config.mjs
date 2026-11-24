@@ -12,7 +12,7 @@ export default defineConfig({
   vite: {
     server: {
       fs: {
-        allow: [fromApp('.'), fromApp('../../assets/brand'), fromApp('../browsify-ui/public')],
+        allow: [fromApp('.'), fromApp('../../assets/brand'), fromApp('../ui/public')],
       },
     },
   },

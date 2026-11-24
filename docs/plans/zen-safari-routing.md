@@ -8,10 +8,10 @@ Research date: 2026-11-17; local verification follow-up: 2026-11-18. Zen workspa
 
 Read `AGENTS.md`, `docs/agents/domain.md`, `GLOSSARY.md`, and ADRs 0001 and 0002. Reuse the Browser Target → Profile Selector resolution → Launch Plan flow; retain ephemeral QuickJS lowering and the on-demand loopback UI. No ADR conflict is proposed.
 
-- `packages/browsify-core/src/browser.rs`: BrowserConfig carries `profile`, optional `container`, custom arguments and URL; Zen is already registered in the Firefox family.
-- `packages/browsify-core/src/profile.rs`: container selectors become `ext+container:name=…&url=…` before browser-family resolution. Firefox profiles resolve separately. Safari enumeration returns an empty list and profile argument resolution rejects CLI flags. Missing-profile policy defaults to warning and fallback; this is unsafe as the policy for newly introduced explicit isolation targets.
-- `apps/browsify/src/launcher.rs`: execution currently models macOS `open` with arguments, instance and activation flags. Arguments imply a new instance in the resolver. Neither successful spawning nor process exit proves the selected session received a URL.
-- `apps/browsify/src/ui_server.rs` and CLI `main.rs` consume profile discovery. `apps/browsify-ui/src/components/BrowserProfileSelector.svelte` accepts name-only lists; `types.ts` and URL Tester currently expose profile strings. Structured IDs and capability state need plumbing through these seams.
+- `packages/core/src/browser.rs`: BrowserConfig carries `profile`, optional `container`, custom arguments and URL; Zen is already registered in the Firefox family.
+- `packages/core/src/profile.rs`: container selectors become `ext+container:name=…&url=…` before browser-family resolution. Firefox profiles resolve separately. Safari enumeration returns an empty list and profile argument resolution rejects CLI flags. Missing-profile policy defaults to warning and fallback; this is unsafe as the policy for newly introduced explicit isolation targets.
+- `apps/cli/src/launcher.rs`: execution currently models macOS `open` with arguments, instance and activation flags. Arguments imply a new instance in the resolver. Neither successful spawning nor process exit proves the selected session received a URL.
+- `apps/cli/src/ui_server.rs` and CLI `main.rs` consume profile discovery. `apps/ui/src/components/BrowserProfileSelector.svelte` accepts name-only lists; `types.ts` and URL Tester currently expose profile strings. Structured IDs and capability state need plumbing through these seams.
 
 ### Zen: isolation and external targeting are separate
 

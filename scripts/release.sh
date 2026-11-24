@@ -2,7 +2,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-VERSION=$(cargo metadata --no-deps --locked --format-version 1 | jq -r '.packages[] | select(.name == "browsify") | .version')
+VERSION=$(cargo metadata --no-deps --locked --format-version 1 | jq -r '.packages[] | select(.name == "browsify-cli") | .version')
 if [[ ! "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     echo "release: only stable X.Y.Z versions are supported" >&2
     exit 1
@@ -21,21 +21,21 @@ case "$MACOSX_DEPLOYMENT_TARGET" in
     *) echo "Unsupported macOS deployment target: $MACOSX_DEPLOYMENT_TARGET" >&2; exit 1 ;;
 esac
 ./scripts/build.sh
-architectures=$(lipo -archs apps/browsify/build/Browsify.app/Contents/MacOS/browsify)
+architectures=$(lipo -archs apps/cli/build/Browsify.app/Contents/MacOS/browsify)
 if [ "$architectures" != arm64 ]; then
     echo "release: expected an arm64-only executable, found: $architectures" >&2
     exit 1
 fi
 # Seal the completed app bundle, not just its linker-signed executable.
-codesign --force --sign - apps/browsify/build/Browsify.app
+codesign --force --sign - apps/cli/build/Browsify.app
 mkdir -p dist
 rm -f dist/Browsify-arm64.tar.gz dist/Browsify-macos13-arm64.tar.gz
-COPYFILE_DISABLE=1 tar -czf "dist/$archive" -C apps/browsify/build Browsify.app
+COPYFILE_DISABLE=1 tar -czf "dist/$archive" -C apps/cli/build Browsify.app
 printf '%s\n' "$archive" > dist/archive-name.txt
 printf '%s\n' "$MACOSX_DEPLOYMENT_TARGET" > dist/minimum-macos.txt
 (
     cd dist
     shasum -a 256 "$archive" > SHA256SUMS
 )
-echo "release: ad hoc-signed Apple Silicon bundle at apps/browsify/build/Browsify.app"
+echo "release: ad hoc-signed Apple Silicon bundle at apps/cli/build/Browsify.app"
 echo "release: archive and checksums in dist/"

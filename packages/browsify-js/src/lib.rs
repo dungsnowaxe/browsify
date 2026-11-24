@@ -509,43 +509,56 @@ impl HybridEngine {
         self.report.uses_window_title
     }
 
-    /// Exports all static rules and rewrites from this JS/TS config into a clean Browsify `config.toml`.
-    pub fn to_toml(&self, source_label: &str) -> String {
-        let rep = &self.report;
-        let mut out = format!(
-            "# Migrated from {}\n# Lowering report: {}/{} rewrites static, {}/{} handlers static (pure_native = {})\n\n",
-            source_label,
-            rep.static_rewrites,
-            rep.total_rewrites,
-            rep.static_handlers,
-            rep.total_handlers,
-            rep.all_static
-        );
-
-        if rep.default_browser_profile.is_empty() {
-            out.push_str(&format!("default_browser = {:?}\n\n", rep.default_browser_name));
-        } else {
-            out.push_str(&format!(
-                "default_browser = {{ name = {:?}, profile = {:?} }}\n\n",
-                rep.default_browser_name, rep.default_browser_profile
-            ));
+    /// Converts only rules whose complete behavior is representable in TOML.
+    pub fn import_toml(&self) -> (String, Vec<String>) {
+        fn supported(m: &InspectedMatcher, rewrite: bool) -> bool {
+            match m.kind.as_str() {
+                "always" | "wildcard" | "regex" => true,
+                "hostnames" => !rewrite && m.patterns.iter().flatten().all(|p| p.kind != "regex"),
+                "openerBundleId" => !rewrite,
+                "any" => m.items.as_ref().is_some_and(|items| {
+                    !items.is_empty() && items.iter().all(|i| i.kind == "wildcard")
+                }),
+                _ => false,
+            }
         }
-
-        out.push_str("[options]\n");
-        out.push_str(&format!("keep_running = {}\n", rep.options.keep_running));
-        out.push_str(&format!("hide_icon = {}\n", rep.options.hide_icon));
-        out.push_str(&format!("log_requests = {}\n", rep.options.log_requests));
-        out.push_str(&format!(
-            "check_for_updates = {}\n\n",
-            rep.options.check_for_updates
-        ));
-
-        for (idx, rw) in self.inspected.rewrites.iter().enumerate() {
-            if !rw.is_static {
+        let descriptions = self.describe_rules();
+        let mut failures = Vec::new();
+        let mut out = String::new();
+        let rep = &self.report;
+        if rep.explicit_default_browser {
+            if let HybridDefaultBrowser::Native(spec) = &self.default_browser {
                 out.push_str(&format!(
-                    "# Rewrite #{} uses dynamic JS function and requires .js/.ts config\n\n",
-                    idx + 1
+                    "default_browser = {}\n",
+                    browsify_core::migrate::toml_browser_target(spec)
                 ));
+            }
+        }
+        out.push_str("[options]\n");
+        for (key, val) in [
+            ("keep_running", self.inspected.options.keep_running),
+            ("hide_icon", self.inspected.options.hide_icon),
+            ("log_requests", self.inspected.options.log_requests),
+            (
+                "check_for_updates",
+                self.inspected.options.check_for_updates,
+            ),
+        ] {
+            if let Some(v) = val {
+                out.push_str(&format!("{key} = {v}\n"));
+            }
+        }
+        for (idx, rw) in self.inspected.rewrites.iter().enumerate() {
+            if !matches!(self.rewrites[idx], HybridRewrite::Native(_))
+                || !rw.matcher.as_ref().is_some_and(|m| supported(m, true))
+            {
+                let reason = if rw.is_static {
+                    "condition cannot be represented in TOML"
+                } else {
+                    "uses a JavaScript callback"
+                };
+                let description = descriptions["rewrites"][idx].as_str().unwrap_or("");
+                failures.push(format!("Rewrite {} · {description} · {reason}", idx + 1));
                 continue;
             }
             out.push_str("[[rewrite]]\n");
@@ -556,7 +569,10 @@ impl HybridEngine {
                 match t.kind.as_str() {
                     "stripParams" => {
                         if let Some(params) = &t.params {
-                            out.push_str(&format!("strip_params = {:?}\n", params));
+                            out.push_str(&format!(
+                                "strip_params = {}\n",
+                                serde_json::json!(params)
+                            ));
                         }
                     }
                     "forceHttps" => {
@@ -564,12 +580,12 @@ impl HybridEngine {
                     }
                     "replaceHost" => {
                         if let Some(h) = &t.host {
-                            out.push_str(&format!("replace_host = {:?}\n", h));
+                            out.push_str(&format!("replace_host = {}\n", serde_json::json!(h)));
                         }
                     }
                     "replaceUrl" => {
                         if let Some(u) = &t.url {
-                            out.push_str(&format!("replace_url = {:?}\n", u));
+                            out.push_str(&format!("replace_url = {}\n", serde_json::json!(u)));
                         }
                     }
                     _ => {}
@@ -579,11 +595,16 @@ impl HybridEngine {
         }
 
         for (idx, h) in self.inspected.handlers.iter().enumerate() {
-            if !h.is_static {
-                out.push_str(&format!(
-                    "# Handler #{} uses dynamic JS callback and requires .js/.ts config\n\n",
-                    idx + 1
-                ));
+            if !matches!(self.handlers[idx], HybridHandler::Native(_))
+                || !h.matcher.as_ref().is_some_and(|m| supported(m, false))
+            {
+                let reason = if h.is_static {
+                    "condition cannot be represented in TOML"
+                } else {
+                    "uses a JavaScript callback"
+                };
+                let description = descriptions["handlers"][idx].as_str().unwrap_or("");
+                failures.push(format!("Handler {} · {description} · {reason}", idx + 1));
                 continue;
             }
             out.push_str("[[handlers]]\n");
@@ -591,25 +612,14 @@ impl HybridEngine {
                 write_matcher_toml(&mut out, m);
             }
             if let Some(b) = &h.browser {
-                if b.profile.is_empty() && b.container.is_none() && b.app_id.is_none() {
-                    out.push_str(&format!("browser = {:?}\n\n", b.name));
-                } else {
-                    let mut fields = vec![format!("name = {:?}", b.name)];
-                    if !b.profile.is_empty() {
-                        fields.push(format!("profile = {:?}", b.profile));
-                    }
-                    if let Some(c) = &b.container {
-                        fields.push(format!("container = {:?}", c));
-                    }
-                    if let Some(a) = &b.app_id {
-                        fields.push(format!("app_id = {:?}", a));
-                    }
-                    out.push_str(&format!("browser = {{ {} }}\n\n", fields.join(", ")));
-                }
+                out.push_str(&format!(
+                    "browser = {}\n\n",
+                    browsify_core::migrate::toml_browser_target(b)
+                ));
             }
         }
 
-        out
+        (out, failures)
     }
 
     /// Exports static wildcard handlers from this JS/TS config into a Finicky-compatible `RulesFile` (`rules.json`).
@@ -978,14 +988,14 @@ fn write_matcher_toml(out: &mut String, m: &InspectedMatcher) {
         "always" => out.push_str("match = \"*\"\n"),
         "wildcard" => {
             if let Some(p) = &m.pattern {
-                out.push_str(&format!("match = {:?}\n", p));
+                out.push_str(&format!("match = {}\n", serde_json::json!(p)));
             }
         }
         "regex" => {
             if let Some(p) = &m.pattern {
                 let flags = m.flags.as_deref().unwrap_or("");
                 let full_pat = apply_js_regex_flags(p, flags).unwrap_or_else(|_| p.clone());
-                out.push_str(&format!("match_regex = {:?}\n", full_pat));
+                out.push_str(&format!("match_regex = {}\n", serde_json::json!(full_pat)));
             }
         }
         "hostnames" => {
@@ -996,14 +1006,14 @@ fn write_matcher_toml(out: &mut String, m: &InspectedMatcher) {
                 .iter()
                 .map(|h| h.pattern.clone())
                 .collect();
-            out.push_str(&format!("match_hostnames = {:?}\n", hosts));
+            out.push_str(&format!("match_hostnames = {}\n", serde_json::json!(hosts)));
         }
         "openerBundleId" => {
             if let Some(ids) = &m.bundle_ids {
                 if ids.len() == 1 {
-                    out.push_str(&format!("opener_bundle_id = {:?}\n", ids[0]));
+                    out.push_str(&format!("opener_bundle_id = {}\n", serde_json::json!(ids[0])));
                 } else {
-                    out.push_str(&format!("opener_bundle_id = {:?}\n", ids));
+                    out.push_str(&format!("opener_bundle_id = {}\n", serde_json::json!(ids)));
                 }
             }
         }
@@ -1011,7 +1021,7 @@ fn write_matcher_toml(out: &mut String, m: &InspectedMatcher) {
             let mut pats = Vec::new();
             collect_wildcard_patterns(m, &mut pats);
             if !pats.is_empty() {
-                out.push_str(&format!("match = {:?}\n", pats));
+                out.push_str(&format!("match = {}\n", serde_json::json!(pats)));
             }
         }
         _ => {}

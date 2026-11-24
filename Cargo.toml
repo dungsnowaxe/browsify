@@ -1,9 +1,9 @@
 [workspace]
 resolver = "2"
 members = [
-    "packages/browsify-core",
+    "packages/core",
     "packages/browsify-js",
-    "apps/browsify",
+    "apps/cli",
 ]
 
 [workspace.package]

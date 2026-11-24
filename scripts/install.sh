@@ -2,6 +2,6 @@
 set -e
 
 (
-    cd apps/browsify-ui
+    cd apps/ui
     npm ci
 )
