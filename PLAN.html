@@ -397,7 +397,7 @@
       <div class="subbox">
         <h4>ADR-0002: On-Demand Loopback HTTP UI Server Instead of WKWebView</h4>
         <p class="muted">
-          <code>docs/adr/0002-on-demand-loopback-ui-server.md</code> — Serves <code>apps/browsify-ui</code> on demand over an ephemeral, token-authenticated <code>127.0.0.1:0</code> HTTP + SSE server in the user's browser and shuts down ~30s after the last UI tab closes, eliminating the 40–80+ MB permanent RSS cost of an in-process <code>WKWebView</code>.
+          <code>docs/adr/0002-on-demand-loopback-ui-server.md</code> — Serves <code>apps/ui</code> on demand over an ephemeral, token-authenticated <code>127.0.0.1:0</code> HTTP + SSE server in the user's browser and shuts down ~30s after the last UI tab closes, eliminating the 40–80+ MB permanent RSS cost of an in-process <code>WKWebView</code>.
         </p>
       </div>
     </div>
@@ -557,14 +557,14 @@
         <h4>5. Visual Rules UI with 0 MB Idle RAM <span class="ok">Best of Both Worlds</span></h4>
         <ul>
           <li>Finicky keeps a heavy <code>WKWebView</code> in memory forever; Grinch and Finch deleted the GUI entirely.</li>
-          <li><strong>Browsify</strong>: Serves the Svelte 5 UI (<code>apps/browsify-ui</code>) over an ephemeral token-authenticated <code>127.0.0.1:0</code> server with 0 MB idle RAM.</li>
+          <li><strong>Browsify</strong>: Serves the Svelte 5 UI (<code>apps/ui</code>) over an ephemeral token-authenticated <code>127.0.0.1:0</code> server with 0 MB idle RAM.</li>
         </ul>
       </div>
       <div class="subbox">
         <h4>6. Cross-Platform Core &amp; CI Testability <span class="ok">Linux + macOS</span></h4>
         <ul>
           <li><code>Grinch</code> and <code>Finch</code> couple their config engine to macOS <code>JavaScriptCore</code>, preventing Linux compilation/testing.</li>
-          <li><strong>Browsify</strong>: <code>packages/browsify-core</code> and <code>packages/browsify-js</code> compile and pass 100% of tests on both Linux and macOS.</li>
+          <li><strong>Browsify</strong>: <code>packages/core</code> and <code>packages/browsify-js</code> compile and pass 100% of tests on both Linux and macOS.</li>
         </ul>
       </div>
     </div>
@@ -578,14 +578,14 @@
     </div>
 
     <pre><code>browsify/
-├── Cargo.toml                        # Workspace root: packages/browsify-core, packages/browsify-js, apps/browsify
+├── Cargo.toml                        # Workspace root: packages/core, packages/browsify-js, apps/cli
 ├── GLOSSARY.md                       # Canonical domain language
 ├── PLAN.html                         # Revised technical specification &amp; architecture plan
 ├── docs/
 │   ├── agents/                       # Agent instructions (domain.md, issue-tracker.md, triage-labels.md)
 │   └── adr/                          # Architectural Decision Records (0001, 0002)
 ├── packages/
-│   ├── browsify-core/                # Pure Rust router, matchers, transforms, ProfileResolver, rules.json &amp; TOML
+│   ├── core/                         # Pure Rust router, matchers, transforms, ProfileResolver, rules.json &amp; TOML
 │   │   └── src/
 │   │       ├── lib.rs                # Domain types: OpenerInfo, ModifierKeys, SystemInfo, PowerInfo
 │   │       ├── browser.rs            # BrowserTarget (BrowserConfig), AppType, BrowserFamily, 27-browser registry
@@ -604,7 +604,7 @@
 │           └── preprocess.rs         # TS type-stripping + ESM `export default` transform
 │
 ├── apps/
-│   ├── browsify/                     # Main binary (`browsify` CLI + `Browsify.app/Contents/MacOS/browsify` daemon)
+│   ├── cli/                          # Main binary (`browsify` CLI + `Browsify.app/Contents/MacOS/browsify` daemon)
 │   │   ├── assets/                   # Info.plist (com.lavenxsnow.browsify), icons, browsify.d.ts, finicky.d.ts
 │   │   └── src/
 │   │       ├── main.rs               # Entry point: dispatches CLI subcommands or starts macOS AppKit daemon
@@ -613,10 +613,11 @@
 │   │       ├── macos.rs              # objc2 NSApplication delegate, kAEGetURL, Handoff, SSO, StatusBar, AX, IOKit
 │   │       └── ui_server.rs          # Token-authenticated 127.0.0.1:0 HTTP/SSE server with 30s idle auto-stop
 │   │
-│   ├── browsify-ui/                  # Svelte 5 Visual Rules Builder, URL Tester, Profile Selector, &amp; Log Viewer
-│   └── browser-addon/                # Chrome/Firefox WebExtension ("Open with Browsify" -> browsify://open/...)
+│   ├── landing/                      # Public landing page
+│   ├── ui/                           # Svelte 5 Visual Rules Builder, URL Tester, Profile Selector, &amp; Log Viewer
+│   └── extension/                    # Chrome/Firefox WebExtension ("Open with Browsify" -> browsify://open/...)
 └── scripts/
-    ├── build.sh                      # Builds apps/browsify-ui + Rust universal/native Browsify.app bundle
+    ├── build.sh                      # Builds apps/ui + Rust universal/native Browsify.app bundle
     └── test.sh                       # Runs cargo test --workspace + UI typecheck</code></pre>
 
     <h3>Safe Marker-Based Lowering &amp; Ordered Hybrid Pipeline (<code>packages/browsify-js</code>)</h3>
@@ -691,7 +692,7 @@
       </tbody>
     </table>
 
-    <h3>macOS AppKit Daemon &amp; Native System Integration (<code>apps/browsify/src/macos.rs</code>)</h3>
+    <h3>macOS AppKit Daemon &amp; Native System Integration (<code>apps/cli/src/macos.rs</code>)</h3>
     <div class="grid-3">
       <div class="subbox">
         <h4>1. Event Loop &amp; URL Interception</h4>
@@ -776,7 +777,7 @@
       <div class="subbox">
         <h4>3. Browsify Rebrand &amp; MIT Attribution</h4>
         <p class="muted">
-          <code>apps/browsify-ui</code> and <code>apps/browser-addon</code> are branded as <strong>Browsify</strong> (showing Native vs. Hybrid QuickJS status in the UI and using <code>browsify://open/</code> in the extension while accepting <code>finicky://open/</code>). <code>LICENSE</code>, <code>About.svelte</code>, and <code>README.md</code> preserve full MIT copyright notice and credit John Sterling (<code>@johnste</code>) and <code>@uetchy</code>.
+          <code>apps/ui</code> and <code>apps/extension</code> are branded as <strong>Browsify</strong> (showing Native vs. Hybrid QuickJS status in the UI and using <code>browsify://open/</code> in the extension while accepting <code>finicky://open/</code>). <code>LICENSE</code>, <code>About.svelte</code>, and <code>README.md</code> preserve full MIT copyright notice and credit John Sterling (<code>@johnste</code>) and <code>@uetchy</code>.
         </p>
       </div>
     </div>
@@ -802,7 +803,7 @@
         </ul>
       </div>
       <div class="subbox">
-        <h4>Phase 2: macOS AppKit Daemon &amp; Native Launcher (<code>apps/browsify</code>)</h4>
+        <h4>Phase 2: macOS AppKit Daemon &amp; Native Launcher (<code>apps/cli</code>)</h4>
         <ul>
           <li>Implement <code>objc2</code> <code>NSApplication</code> daemon in <code>macos.rs</code>: <code>kAEGetURL</code>, <code>application:openFile:</code>, Handoff, <code>ASWebAuthenticationSession</code>, <code>NSStatusBar</code> menu (with 10-item <code>Recent URLs</code>, <code>Set as Default Browser</code>, <code>Edit Config…</code>, <code>Reload Config</code>, error badge), lazy <code>AXUIElement</code> <code>windowTitle</code>, and IOKit power info.</li>
           <li>Implement direct <code>NSWorkspace</code> launching and post-handoff <code>NSRunningApplication</code> activation in <code>launcher.rs</code>.</li>
@@ -813,13 +814,13 @@
         <h4>Phase 3: Secure On-Demand UI Server &amp; Browsify UI / Addon</h4>
         <ul>
           <li>Upgrade <code>ui_server.rs</code> with per-launch session token + <code>Origin</code> validation, SSE log streaming (<code>/api/events</code>), 30s idle auto-shutdown after tab disconnect, bundle-relative asset loading, and installed-browser filtering.</li>
-          <li>Update <code>apps/browsify-ui</code> and <code>apps/browser-addon</code> with Browsify branding, SSE log consumer, Primary Config override indicators, and upstream MIT credits to John Sterling &amp; <code>@uetchy</code>.</li>
+          <li>Update <code>apps/ui</code> and <code>apps/extension</code> with Browsify branding, SSE log consumer, Primary Config override indicators, and upstream MIT credits to John Sterling &amp; <code>@uetchy</code>.</li>
         </ul>
       </div>
       <div class="subbox">
         <h4>Phase 4: Legacy Cleanup, Packaging &amp; Verification</h4>
         <ul>
-          <li>Move bundle assets (<code>Info.plist</code> with <code>com.lavenxsnow.browsify</code>, icons, <code>browsify.d.ts</code>, <code>finicky.d.ts</code>) to <code>apps/browsify/assets/</code> and remove legacy <code>apps/finicky/</code> and <code>packages/config-api/</code>.</li>
+          <li>Move bundle assets (<code>Info.plist</code> with <code>com.lavenxsnow.browsify</code>, icons, <code>browsify.d.ts</code>, <code>finicky.d.ts</code>) to <code>apps/cli/assets/</code> and remove legacy <code>apps/finicky/</code> and <code>packages/config-api/</code>.</li>
           <li>Update <code>LICENSE</code>, <code>scripts/build.sh</code>, <code>scripts/test.sh</code>, and <code>.github/workflows/</code> for the Rust workspace and <code>Browsify.app</code> bundle.</li>
           <li>Run full Rust unit/integration test suite and UI typecheck/build verification.</li>
         </ul>

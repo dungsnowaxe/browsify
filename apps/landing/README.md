@@ -23,4 +23,4 @@ When ready to publish, authenticate with `pnpm -C apps/landing exec wrangler log
 
 ## Animation and assets
 
-The Signal board uses CSS for its animation and a small browser script for pause/play, visibility, and reduced-motion preferences. The routing examples remain readable without JavaScript. The browser icons and their attribution are sourced from `apps/browsify-ui/public/icons/`; font licenses are included with the build.
+The Signal board uses CSS for its animation and a small browser script for pause/play, visibility, and reduced-motion preferences. The routing examples remain readable without JavaScript. The browser icons and their attribution are sourced from `apps/ui/public/icons/`; font licenses are included with the build.

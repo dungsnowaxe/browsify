@@ -28,7 +28,7 @@ personal browser, and meeting links wherever you want them.
   before choosing a destination.
 - **Visual editor or config files** — manage rules in the browser-based UI, or use
   TOML, JavaScript, or TypeScript.
-- **Finicky migration** — load existing Finicky configurations or migrate them to
+- **Finicky migration** — review and import existing Finicky configurations into
   native TOML. Validate your configuration and test important links when migrating.
 - **Rust core** — declarative rules run natively; custom JavaScript functions use
   QuickJS. The local UI server runs on demand rather than staying open while idle.
@@ -143,24 +143,22 @@ custom `--space`/`--new-window`/`--private-window` arguments. Zen's own
 per-website space-routing settings can still override where a link opens; a
 successful handoff does not override browser-native policy.
 
-Browsify also loads `~/.browsify.js`, `~/.browsify.ts`, `~/.finicky.js`, and
-`~/.finicky.ts`. For example:
+The visual rules editor and Preferences both save to the same TOML file. Open
+UI tabs in the same browser profile share unsaved edits. Choose **Save changes**
+to activate them. If another tab or text editor changes the same field,
+Browsify shows the conflicting values before saving.
 
-```js
-export default {
-  defaultBrowser: "Safari",
-  handlers: [
-    {
-      match: "meet.google.com/*",
-      browser: { name: "Google Chrome", profile: "Work" },
-    },
-  ],
-};
+### Import an existing configuration
+
+Open Browsify’s UI and choose **Review import** when it finds a Finicky config
+or legacy Browsify rules or settings. Review the resulting TOML and copy the
+report of rules that need manual attention. Choose **Use imported config** to
+activate it. You can also preview an explicit migration from the command line:
+
+```sh
+browsify migrate --config ~/.finicky.js --check
+browsify migrate --config ~/.finicky.js --apply REVIEW_ID
 ```
-
-Primary Config handler rules run before rules saved by the visual editor. Explicit
-settings chosen in the UI override corresponding Primary Config settings without
-rewriting your file.
 
 ### Command line
 
@@ -195,7 +193,16 @@ replace the installed app with the downloaded version, and reopen it.
 
 ## Development
 
-On macOS, install Rust, Node.js 22, `jq`, and Xcode command line tools. From the
+| Directory | Package | Role |
+| --- | --- | --- |
+| `apps/cli` | `browsify-cli` | Builds the `browsify` command and the macOS app daemon. |
+| `apps/ui` | `@browsify/ui` | Desktop settings, visual rules editor, and URL tester. |
+| `apps/extension` | `@browsify/extension` | Chrome and Firefox extension for opening links with Browsify. |
+| `apps/landing` | `@browsify/landing` | Public landing page. |
+| `packages/core` | `browsify-core` | Native routing, Browser Targets, and profile resolution. |
+| `packages/browsify-js` | `browsify-js` | Inspects legacy JavaScript and TypeScript configurations with QuickJS during import. |
+
+On macOS, install Rust, Node.js 24.22.1, `jq`, and Xcode command line tools. From the
 repository root:
 
 ```sh
@@ -203,14 +210,14 @@ repository root:
 ./scripts/build.sh
 ```
 
-The app is built at `apps/browsify/build/Browsify.app`. Local builds are not
+The app is built at `apps/cli/build/Browsify.app`. Local builds are not
 Developer ID–signed or notarized either.
 
 Run checks:
 
 ```sh
 cargo test --workspace --locked
-(cd apps/browsify-ui && npm run check && npm test)
+(cd apps/ui && npm run check && npm test)
 ```
 
 For macOS builds, release publishing, and update signing, see the

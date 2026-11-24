@@ -45,11 +45,11 @@
   --dur-micro: 140ms; --ease-out: cubic-bezier(.16, 1, .3, 1);
 }
 @font-face {
-  font-family: Sora; src: url('../../../browsify-ui/public/fonts/sora-latin.woff2') format('woff2');
+  font-family: Sora; src: url('../../../ui/public/fonts/sora-latin.woff2') format('woff2');
   font-style: normal; font-weight: 100 800; font-display: swap;
 }
 @font-face {
-  font-family: Figtree; src: url('../../../browsify-ui/public/fonts/figtree-latin.woff2') format('woff2');
+  font-family: Figtree; src: url('../../../ui/public/fonts/figtree-latin.woff2') format('woff2');
   font-style: normal; font-weight: 300 900; font-display: swap;
 }
 *, *::before, *::after { box-sizing: border-box; }

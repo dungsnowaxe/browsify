@@ -1,0 +1,7 @@
+{
+  "name": "@browsify/extension",
+  "private": true,
+  "scripts": {
+    "build": "bash build.sh"
+  }
+}

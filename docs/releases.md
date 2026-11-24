@@ -48,7 +48,7 @@ if a release already exists, publishing fails rather than overwriting its assets
 
 ## Build locally
 
-On an Apple Silicon Mac, install Node.js 22, Rust, `jq`, and Xcode command line
+On an Apple Silicon Mac, install Node.js 24.22.1, Rust, `jq`, and Xcode command line
 tools. From the repository root:
 
 ```sh
@@ -57,7 +57,7 @@ tools. From the repository root:
 (cd dist && shasum -a 256 -c SHA256SUMS)
 ```
 
-This produces the Apple Silicon app at `apps/browsify/build/Browsify.app` and the
+This produces the Apple Silicon app at `apps/cli/build/Browsify.app` and the
 archive and checksums in `dist/`. The local release script does not create the
 detached update signature; the publish job does that separately.
 

@@ -1,70 +1,18 @@
 #!/bin/bash
-# Run Browsify in a specific test scenario without building.
-#
-# Usage:
-#   ./scripts/dev.sh [scenario]
-#
-# Scenarios:
-#   0  normal  Auto-detect configs
-#   1  none    No primary config, no rules.json
-#   2  js      JS config only
-#   3  json    rules.json only
-#   4  both    JS config + rules.json
+# Run with the normal TOML config, built-in defaults, or a particular TOML file.
+set -eu
 
-set -e
-
-BINARY="apps/browsify/build/Browsify.app/Contents/MacOS/browsify"
-if [[ ! -x "$BINARY" && -x "target/release/browsify" ]]; then
-  BINARY="target/release/browsify"
-elif [[ ! -x "$BINARY" && -x "target/debug/browsify" ]]; then
-  BINARY="target/debug/browsify"
+cd "$(dirname "$0")/.."
+binary="apps/cli/build/Browsify.app/Contents/MacOS/browsify"
+if [[ ! -x "$binary" && -x target/release/browsify ]]; then
+  binary="target/release/browsify"
+elif [[ ! -x "$binary" ]]; then
+  binary="target/debug/browsify"
 fi
 
-JS_CONFIG="$(pwd)/testdata/config.js"
-JSON_RULES="$(pwd)/testdata/rules.json"
-NO_RULES="/tmp/browsify-dev-no-rules-$(date +%s).json"
-
-SCENARIO="${1}"
-if [[ -z "$SCENARIO" ]]; then
-  echo "Usage: $0 <scenario>"
-  echo ""
-  echo "  0  normal  Auto-detect configs"
-  echo "  1  none    No primary config, no rules.json"
-  echo "  2  js      JS config only  ($JS_CONFIG)"
-  echo "  3  json    rules.json only ($JSON_RULES)"
-  echo "  4  both    JS config + rules.json"
-  exit 0
-fi
-
-case "$SCENARIO" in
-  0|normal)
-    echo "Scenario 0: normal (auto-detect configs)"
-    "$BINARY" --window
-    ;;
-  1|none)
-    echo "Scenario 1: no primary config, no rules.json"
-    "$BINARY" --window --no-config --rules "$NO_RULES"
-    ;;
-  2|js)
-    echo "Scenario 2: JS config only"
-    "$BINARY" --window --config "$JS_CONFIG" --rules "$NO_RULES"
-    ;;
-  3|json)
-    echo "Scenario 3: rules.json only"
-    "$BINARY" --window --no-config --rules "$JSON_RULES"
-    ;;
-  4|both)
-    echo "Scenario 4: JS config + rules.json"
-    "$BINARY" --window --config "$JS_CONFIG" --rules "$JSON_RULES"
-    ;;
-  *)
-    echo "Unknown scenario: $SCENARIO"
-    echo ""
-    echo "  0  normal  Auto-detect configs"
-    echo "  1  none    No primary config, no rules.json"
-    echo "  2  js      JS config only  ($JS_CONFIG)"
-    echo "  3  json    rules.json only ($JSON_RULES)"
-    echo "  4  both    JS config + rules.json"
-    exit 1
-    ;;
+case "${1:-normal}" in
+  0|normal) exec "$binary" --window ;;
+  1|none) exec "$binary" --window --no-config ;;
+  *.toml) exec "$binary" --window --config "$1" ;;
+  *) echo "Usage: $0 [normal|none|path/to/config.toml]" >&2; exit 2 ;;
 esac

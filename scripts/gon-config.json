@@ -1,5 +1,5 @@
 {
-  "source": ["./apps/browsify/build/Browsify.app"],
+  "source": ["./apps/cli/build/Browsify.app"],
   "bundle_id": "com.lavenxsnow.browsify",
   "apple_id": {
     "username": ""

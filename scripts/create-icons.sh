@@ -4,9 +4,9 @@ set -euo pipefail
 # Compute paths relative to script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$SCRIPT_DIR/.."
-SRC="$ROOT_DIR/apps/browsify/assets/template-icon.pdf"
-ICONSET_DIR="$ROOT_DIR/apps/browsify/assets/menu.iconset"
-OUTPUT_ICNS="$ROOT_DIR/apps/browsify/assets/menu-bar.icns"
+SRC="$ROOT_DIR/apps/cli/assets/template-icon.pdf"
+ICONSET_DIR="$ROOT_DIR/apps/cli/assets/menu.iconset"
+OUTPUT_ICNS="$ROOT_DIR/apps/cli/assets/menu-bar.icns"
 
 # Remove old iconset and recreate
 rm -rf "$ICONSET_DIR"
