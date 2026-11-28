@@ -641,6 +641,36 @@ fn prompt_ready(home: &Path, generation: u64, release: &Release) {
     }
 }
 
+pub fn skip_release(home: &Path) -> Result<String, String> {
+    let mut s = state().lock().unwrap();
+    let version = s
+        .release
+        .as_ref()
+        .map(|r| r.version.clone())
+        .ok_or_else(|| "There is no available update to skip.".to_owned())?;
+    let mut prefs = preferences(home);
+    prefs.skipped = Some(version.clone());
+    save_preferences(home, &prefs)?;
+    s.staged = None;
+    publish(&mut s, "skipped", None);
+    Ok(format!("Skipped {version}. You can still check manually anytime."))
+}
+
+pub fn defer_release(home: &Path) -> Result<String, String> {
+    let mut s = state().lock().unwrap();
+    let version = s
+        .release
+        .as_ref()
+        .map(|r| r.version.clone())
+        .ok_or_else(|| "There is no available update to defer.".to_owned())?;
+    let mut prefs = preferences(home);
+    prefs.remind_after = now() + DAY;
+    prefs.deferred_version = Some(version.clone());
+    save_preferences(home, &prefs)?;
+    publish(&mut s, "deferred", None);
+    Ok(format!("Postponed update reminder for {version} for 24 hours."))
+}
+
 fn installed_bundle() -> Result<PathBuf, String> {
     if !crate::macos::is_update_host_ready() {
         return Err(

@@ -21,6 +21,7 @@ pub use router::{
     compile_json_rules, decode_protocol_url, inherit_rules_file_options,
     rules_file_default_browser, CompiledHandler, CompiledMatcher, CompiledRewrite,
     CompiledTransform, ConfigOptions, ExplicitOptions, HostnamePattern, NativeRouter,
+    ResolvedRoute,
 };
 pub use rules::{
     Rule, RulesFile, RulesOptions, TomlBrowserSpec, TomlBrowserTarget, TomlConfig, TomlHandlerRule,

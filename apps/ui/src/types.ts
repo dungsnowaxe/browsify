@@ -57,7 +57,7 @@ export interface UpdateInfo {
   updateCheckEnabled: boolean;
   downloadUrl: string;
   releaseUrl: string;
-  status: "disabled" | "checking" | "upToDate" | "available" | "downloading" | "ready" | "skipped" | "error";
+  status: "disabled" | "checking" | "upToDate" | "available" | "downloading" | "ready" | "skipped" | "deferred" | "error";
   error?: string | null;
 }
 

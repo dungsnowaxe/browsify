@@ -807,11 +807,32 @@ fn handle_rpc(
             }
             Err(error) => serde_json::json!({"type": "updateAction", "message": error}).to_string(),
         },
+        "skipUpdate" => match crate::update::skip_release(profile_resolver.home_dir()) {
+            Ok(message) => serde_json::json!({"type": "updateAction", "message": message}).to_string(),
+            Err(error) => serde_json::json!({"type": "updateAction", "message": error}).to_string(),
+        },
+        "deferUpdate" => match crate::update::defer_release(profile_resolver.home_dir()) {
+            Ok(message) => serde_json::json!({"type": "updateAction", "message": message}).to_string(),
+            Err(error) => serde_json::json!({"type": "updateAction", "message": error}).to_string(),
+        },
         "testUrl" => {
             let url = msg.get("url").and_then(|v| v.as_str()).unwrap_or("");
+            let opener = msg
+                .get("opener")
+                .and_then(|v| v.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty());
+            let opener_info = opener.map(|id| browsify_core::OpenerInfo {
+                name: id.to_string(),
+                bundle_id: id.to_string(),
+                path: String::new(),
+                window_title: None,
+                pid: 0,
+            });
             let eng = engine.lock().unwrap();
-            match eng.resolve(url, None, false) {
-                Ok(cfg) => {
+            match eng.resolve_with_trace(url, opener_info.as_ref(), false) {
+                Ok(trace) => {
+                    let cfg = trace.target;
                     let plan = profile_resolver.build_launch_plan(
                         &cfg,
                         false,
@@ -836,7 +857,11 @@ fn handle_rpc(
                             "profile": display_profile,
                             "args": plan.args,
                             "warning": plan.warning,
-                            "action": plan.action
+                            "action": plan.action,
+                            "matchedBy": trace.matched_rule_source,
+                            "matchedRuleIndex": trace.matched_rule_index,
+                            "rewritten": trace.rewritten,
+                            "opener": opener
                         }
                     })
                     .to_string()
@@ -1146,5 +1171,57 @@ mod tests {
             token
         );
         assert!(!validate_loopback_and_token(&evil_origin, "", token));
+    }
+
+    #[test]
+    fn test_url_rpc_supports_opener_and_reports_match_attribution() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("primary.toml");
+        fs::write(
+            &path,
+            r#"
+default_browser = "Safari"
+
+[[rewrite]]
+match = "*example.test/*"
+force_https = true
+
+[[handlers]]
+match = "*example.test/*"
+opener_bundle_id = "com.tinyspeck.slackmacgap"
+browser = "Firefox"
+"#,
+        )
+        .unwrap();
+        let eng = Arc::new(Mutex::new(
+            BrowsifyEngine::load(root.path(), Some(&path), None, false).unwrap(),
+        ));
+        let resolver = Arc::new(ProfileResolver::new(root.path()));
+        let rpc = |m: serde_json::Value| -> serde_json::Value {
+            serde_json::from_str(&handle_rpc(&m.to_string(), &eng, &resolver)).unwrap()
+        };
+
+        let with_opener = rpc(serde_json::json!({
+            "type": "testUrl",
+            "url": "http://example.test/docs",
+            "opener": "com.tinyspeck.slackmacgap"
+        }))["message"]
+            .clone();
+        assert_eq!(with_opener["browser"], "Firefox");
+        assert_eq!(with_opener["url"], "https://example.test/docs");
+        assert_eq!(with_opener["matchedBy"], "handler");
+        assert_eq!(with_opener["matchedRuleIndex"], 1);
+        assert_eq!(with_opener["rewritten"], true);
+        assert_eq!(with_opener["opener"], "com.tinyspeck.slackmacgap");
+
+        let without_opener = rpc(serde_json::json!({
+            "type": "testUrl",
+            "url": "https://example.test/docs"
+        }))["message"]
+            .clone();
+        assert_eq!(without_opener["browser"], "Safari");
+        assert_eq!(without_opener["matchedBy"], "default");
+        assert_eq!(without_opener["matchedRuleIndex"], serde_json::Value::Null);
+        assert_eq!(without_opener["rewritten"], false);
     }
 }

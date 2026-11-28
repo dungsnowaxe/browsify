@@ -1,6 +1,6 @@
 <script lang="ts">
   import { attrs, materials } from "./design-system/styles";
-  import { Router, Route } from "svelte-routing";
+  import { Router, Route, Link } from "svelte-routing";
   import { onDestroy, onMount } from "svelte";
   import LogViewer from "./pages/LogViewer.svelte";
   import StartPage from "./pages/StartPage.svelte";
@@ -10,20 +10,56 @@
   import TestUrl from "./pages/TestUrl.svelte";
   import Rules from "./pages/Rules.svelte";
   import ToastContainer from "./components/ToastContainer.svelte";
-  import AppearanceMenu from "./components/AppearanceMenu.svelte";
+  import DraftDialog from "./components/DraftDialog.svelte";
+  import AppFooter from "./components/AppFooter.svelte";
   import type { LogEntry, UpdateInfo, ConfigInfo, Choice, ProfileChoices, LoginItemStatus } from "./types";
+  import { activeDialog, askConfirmClearLogs } from "./lib/draftDialog";
   import { receiveUrlTestResult } from "./lib/testUrlStore";
   import { toast } from "./lib/toast";
+  import {
+    draft,
+    draftError,
+    clearDraftError,
+    countInvalidRules,
+    requestFocusInvalidRule,
+    saving,
+    save,
+    discard,
+    refresh,
+    startDraft,
+  } from "./lib/configDraft";
+  import { equal } from "./lib/configMerge";
 
-  import {draft, draftError, saving, save, discard, startDraft} from "./lib/configDraft";
-  import {equal} from "./lib/configMerge";
-  import ImportConfig from "./components/ImportConfig.svelte";
-  onMount(startDraft);
-  $: dirty = $draft && !equal($draft.original,$draft.current);
-  let version = "v0.0.0";
+  let manualRetrying = false;
+
+  onMount(() => {
+    const stopDraft = startDraft();
+    const onKeydown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+        if (dirty && !$saving && !$activeDialog) {
+          event.preventDefault();
+          if (invalidRuleCount > 0) {
+            requestFocusInvalidRule();
+          }
+          void save();
+        }
+      }
+    };
+    window.addEventListener("keydown", onKeydown);
+    return () => {
+      stopDraft();
+      window.removeEventListener("keydown", onKeydown);
+    };
+  });
+
+  $: dirty = $draft && !equal($draft.original, $draft.current);
+  $: invalidRuleCount = $draft ? countInvalidRules($draft.current.rows) : 0;
+
+  let version = "";
   let updateChecking = false;
+  let connectionStatus: "connecting" | "connected" | "disconnected" = "connecting";
 
-  let scrollArea: HTMLDivElement;
+  let scrollArea: HTMLElement;
   let hasConfig = false;
   let config: ConfigInfo = { configPath: "" };
   let messageBuffer: LogEntry[] = [];
@@ -40,12 +76,16 @@
     (msg) => msg.level.toLowerCase() === "error"
   ).length;
 
+  $: showDraftError = !!$draftError && connectionStatus !== "disconnected";
+  $: toastOffsetLevel = (dirty && showDraftError ? 2 : dirty || showDraftError ? 1 : 0) as 0 | 1 | 2;
+
   function handleMessage(msg: any) {
     const parsedMsg = typeof msg === "string" ? JSON.parse(msg) : msg;
-    console.log("Received message:", parsedMsg.type, parsedMsg);
     switch (parsedMsg.type) {
       case "version":
         version = parsedMsg.message;
+        connectionStatus = "connected";
+        manualRetrying = false;
         break;
       case "buildInfo":
         break;
@@ -55,13 +95,17 @@
         break;
       case "config":
         hasConfig = true;
+        connectionStatus = "connected";
+        manualRetrying = false;
         if (parsedMsg.message) {
           config = parsedMsg.message;
         }
         break;
       case "updateInfo":
         updateInfo = parsedMsg.message;
-        if (window.webkit?.messageHandlers?.finicky) updateChecking = false;
+        if (parsedMsg.message?.status !== "checking") {
+          updateChecking = false;
+        }
         break;
       case "updateAction":
         toast.show("Browsify updates", "info", parsedMsg.message);
@@ -111,9 +155,13 @@
     }
   }
 
-  function clearAllLogs() {
+  async function clearAllLogs() {
+    if (!messageBuffer.length) return;
+    const confirmed = await askConfirmClearLogs(messageBuffer.length);
+    if (!confirmed) return;
     messageBuffer = [];
     window.finicky?.sendMessage({ type: "clearLogs" });
+    toast.info("Activity logs cleared", 2600);
   }
 
   function getSessionToken(): string {
@@ -122,12 +170,25 @@
     return params.get("token") ?? "";
   }
 
+  function retryConnection() {
+    manualRetrying = true;
+    connectionStatus = "connecting";
+    clearDraftError();
+    window.finicky.sendMessage({ type: "getInitState" });
+    window.finicky.sendMessage({ type: "getInstalledBrowsers" });
+    window.finicky.sendMessage({ type: "getBrowserChoices" });
+    void refresh();
+  }
+
   const _preloadQueue: any[] = window.finicky?._queue ?? [];
 
   window.finicky = {
     sendMessage: (msg: any) => {
       if (msg.type === "setLoginItem") loginSaving = true;
-      if (msg.type === "checkForUpdates") { updateChecking = true; updateInfo = null; }
+      if (msg.type === "checkForUpdates") {
+        updateChecking = true;
+        updateInfo = null;
+      }
       if (window.webkit?.messageHandlers?.finicky) {
         window.webkit.messageHandlers.finicky.postMessage(JSON.stringify(msg));
       } else {
@@ -147,20 +208,42 @@
           .then((replies) => {
             const messages = Array.isArray(replies) ? replies : [replies];
             // Signed updates acknowledge immediately; progress/results arrive over SSE.
-            if (msg.type === "checkForUpdates" && !messages.some((reply) => reply?.type === "updateAction" || reply?.type === "updateInfo" || reply?.type === "updateCheckError")) {
+            if (
+              msg.type === "checkForUpdates" &&
+              !messages.some(
+                (reply) =>
+                  reply?.type === "updateAction" ||
+                  reply?.type === "updateInfo" ||
+                  reply?.type === "updateCheckError"
+              )
+            ) {
               throw new Error("Browsify did not return an update result");
             }
             for (const reply of messages) if (reply) handleMessage(reply);
           })
           .catch((err) => {
             console.error("Browsify RPC error:", err);
-            if (msg.type === "testUrl") {
-              receiveUrlTestResult({ error: "Could not reach Browsify. Check the app is running, then try again." }, msg.requestId);
+            if (msg.type === "getInitState") {
+              connectionStatus = "disconnected";
+              if (manualRetrying) {
+                manualRetrying = false;
+                toast.error(
+                  "Browsify isn’t running",
+                  "Open Browsify from Applications, Spotlight, or run browsify ui, then try again."
+                );
+              }
+            } else if (msg.type === "testUrl") {
+              receiveUrlTestResult(
+                { error: "Could not reach Browsify. Check the app is running, then try again." },
+                msg.requestId
+              );
             } else if (msg.type === "editAdvancedRules") {
-              draftError.set("Could not open the config file.");
+              draftError.set("Could not open your Primary Config.");
             } else if (msg.type === "getBrowserChoices") {
               browserChoices = [];
-              draftError.set("Could not load installed browsers. Try refreshing the list.");
+              if (hasConfig) {
+                draftError.set("Could not load installed browsers. Try refreshing the list.");
+              }
             } else if (msg.type === "getProfileChoices") {
               profileChoices = { ...profileChoices, [msg.browser]: { profiles: [], error: true } };
             } else if (msg.type === "setLoginItem") {
@@ -169,9 +252,9 @@
             } else if (msg.type === "checkForUpdates") {
               updateChecking = false;
               toast.show("Could not check for updates", "error", "Check that Browsify is running, then try again.");
+            } else if (msg.type === "skipUpdate" || msg.type === "deferUpdate") {
+              toast.show("Could not update release preference", "error", "Check that Browsify is running, then try again.");
             }
-          }).finally(() => {
-            if (msg.type === "checkForUpdates") updateChecking = false;
           });
       }
     },
@@ -197,50 +280,73 @@
           console.error("Browsify SSE parse error:", err);
         }
       };
+      es.onerror = () => {
+        if (!hasConfig) connectionStatus = "disconnected";
+      };
     }
   }
   window.finicky.sendMessage({ type: "getInstalledBrowsers" });
+  window.finicky.sendMessage({ type: "getBrowserChoices" });
 </script>
 
 <a class="skip-link" href="#main-content">Skip to content</a>
 <div class="app-shell">
   <Router>
-    <main class={`app-frame ${attrs(materials.frame).class ?? ""}`} style={attrs(materials.frame).style} aria-label="Browsify workspace">
+    <div
+      class={`app-frame ${attrs(materials.frame).class ?? ""}`}
+      style={attrs(materials.frame).style}
+    >
       <div class="layout">
-        <TabBar {numErrors} onNavigate={() => scrollArea?.scrollTo(0, 0)} />
+        <TabBar
+          {numErrors}
+          onNavigate={() => {
+            scrollArea?.scrollTo(0, 0);
+          }}
+        />
         <div class="workspace">
-          <div class="container" id="main-content" tabindex="-1" bind:this={scrollArea}>
+          <main class="container" id="main-content" tabindex="-1" bind:this={scrollArea}>
             <div class="content">
-              <ImportConfig />
               <Route path="/">
                 <StartPage
                   {hasConfig}
+                  {connectionStatus}
                   {updateInfo}
                   {config}
                   {numErrors}
                   {installedBrowsers}
+                  {browserChoices}
+                  onRetry={retryConnection}
                 />
               </Route>
 
               <Route path="/preferences">
                 <Preferences
                   {hasConfig}
+                  {connectionStatus}
                   {config}
                   {installedBrowsers}
                   {profilesByBrowser}
+                  {browserChoices}
+                  {profileChoices}
                   {loginItem}
                   {loginSaving}
                   {updateInfo}
                   {updateChecking}
+                  onRetry={retryConnection}
                 />
               </Route>
 
               <Route path="/troubleshoot">
-                <LogViewer {messageBuffer} onClearLogs={clearAllLogs} />
+                <LogViewer
+                  {messageBuffer}
+                  {connectionStatus}
+                  onClearLogs={clearAllLogs}
+                  onRetry={retryConnection}
+                />
               </Route>
 
               <Route path="/test">
-                <TestUrl />
+                <TestUrl {connectionStatus} onRetry={retryConnection} />
               </Route>
 
               <Route path="/about">
@@ -251,29 +357,74 @@
                 <Rules
                   {browserChoices}
                   {profileChoices}
+                  {installedBrowsers}
+                  {profilesByBrowser}
+                  {connectionStatus}
+                  onRetry={retryConnection}
                 />
               </Route>
             </div>
-          </div>
-          {#if $draftError}<p role="alert">{$draftError}</p>{/if}
-          {#if dirty}<div class="footer" aria-label="Unsaved configuration">
-            <span>Unsaved changes</span><span class="spacer"></span>
-            <button class="app-button" disabled={$saving} on:click={discard}>Discard changes</button>
-            <button class="app-button" disabled={$saving} on:click={save}>{$saving ? "Saving…" : "Save changes"}</button>
-          </div>{/if}
-          <div class="footer">
-            <span class="connection" class:connected={hasConfig} aria-label={hasConfig ? "Connected to Browsify" : "Connecting to Browsify"}></span>
-            <span class="spacer"></span>
-            <AppearanceMenu />
-            {#if updateInfo?.status === "upToDate"}
-              <span class="up-to-date">Up to date</span>
-            {/if}
-            <span class="version">{version}</span>
-          </div>
+          </main>
+
+          {#if showDraftError}
+            <div class="draft-error" role="alert">
+              <span>{$draftError}</span>
+              <div class="draft-error-actions">
+                {#if dirty}
+                  <button
+                    type="button"
+                    class="inline-action"
+                    disabled={$saving || invalidRuleCount > 0}
+                    on:click={save}
+                  >
+                    Retry save
+                  </button>
+                {/if}
+                <button type="button" class="inline-action" on:click={clearDraftError}>
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          {/if}
+
+          {#if dirty}
+            <div class="footer draft-footer" role="region" aria-label="Unsaved configuration">
+              <span class="draft-status">
+                {#if invalidRuleCount > 0}
+                  <Link to="/rules" class="draft-link" on:click={requestFocusInvalidRule}>
+                    {invalidRuleCount} {invalidRuleCount === 1 ? "rule needs" : "rules need"} attention before saving →
+                  </Link>
+                {:else}
+                  Unsaved changes
+                {/if}
+              </span>
+              <span class="spacer"></span>
+              <button type="button" class="app-button danger" disabled={$saving} on:click={discard}>
+                Discard changes
+              </button>
+              <button
+                type="button"
+                class="app-button primary"
+                title="Save changes (⌘S)"
+                disabled={$saving || invalidRuleCount > 0}
+                on:click={save}
+              >
+                {$saving ? "Saving…" : "Save changes"}
+              </button>
+            </div>
+          {/if}
+
+          <AppFooter
+            {connectionStatus}
+            {updateInfo}
+            {version}
+            onRetry={retryConnection}
+          />
         </div>
       </div>
-      <ToastContainer />
-    </main>
+      <ToastContainer offsetLevel={toastOffsetLevel} />
+      <DraftDialog />
+    </div>
   </Router>
 </div>
 
@@ -292,9 +443,9 @@
     max-width: calc(100vw - 32px);
     max-height: calc(100svh - 32px);
     padding: 16px;
-    background: var(--browsify-canvas);
+    background-color: var(--browsify-canvas);
     border: 2px solid var(--browsify-border);
-    box-shadow: 0 24px 80px rgba(25, 27, 21, 0.1);
+    box-shadow: 0 24px 80px color-mix(in srgb, var(--browsify-rail) 18%, transparent);
   }
 
   .layout {
@@ -309,13 +460,14 @@
   .workspace {
     flex: 1 1 auto;
     min-width: 0;
+    min-height: 0;
     display: flex;
     flex-direction: column;
     padding-right: 12px;
   }
 
   .container {
-    padding: 20px 4px 20px 0;
+    padding: 16px 4px 16px 0;
     min-width: 0;
     max-width: 100%;
     box-sizing: border-box;
@@ -329,56 +481,101 @@
     scrollbar-color: var(--browsify-border-strong) transparent;
   }
 
+  .draft-error {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 12px;
+    flex-wrap: wrap;
+    margin: 8px 0 4px;
+    padding: 8px 12px;
+    border-radius: var(--browsify-radius-control);
+    border: 1px solid var(--log-error);
+    background: color-mix(in srgb, var(--log-error) 8%, var(--browsify-panel));
+    color: var(--log-error);
+    font-size: 13px;
+  }
+
+  .draft-error-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+
+  .inline-action {
+    background: none;
+    border: none;
+    color: inherit;
+    font-weight: 500;
+    text-decoration: underline;
+    cursor: pointer;
+    min-height: 44px;
+    padding: 0 10px;
+    border-radius: 10px;
+  }
+
+  .inline-action:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+
   .footer {
     display: flex;
     flex: 0 0 auto;
     align-items: center;
     gap: 8px;
     min-height: 52px;
-    padding: 8px 0 0;
+    padding: 6px 0 0;
     border-top: 1px solid var(--browsify-border-strong);
     flex-wrap: wrap;
   }
 
-  .version {
-    color: var(--text-secondary);
+  .draft-footer {
+    padding-bottom: 6px;
+  }
+
+  .draft-status {
     font-size: 13px;
-    font-variant-numeric: tabular-nums;
+    font-weight: 500;
+    color: var(--text-primary);
   }
 
-  .content { flex: 1; min-width: 0; }
-
-  .connection {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--text-secondary);
-    flex-shrink: 0;
+  .draft-status :global(.draft-link) {
+    color: var(--log-warning);
+    text-decoration: underline;
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
   }
 
-  .connection.connected { background: var(--log-success); }
+  .content { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 
   .spacer {
     flex: 1;
   }
 
-  .up-to-date {
-    color: var(--log-success);
-    font-size: 13px;
-  }
-
   @media (max-width: 700px) {
     .app-shell { padding: 8px; }
     .app-frame {
+      width: 100%;
+      height: calc(100svh - 16px);
       max-width: calc(100vw - 16px);
       max-height: calc(100svh - 16px);
-      padding: 8px;
-      border-radius: 30px;
+      padding: 10px;
+      border-radius: 28px;
     }
-    .layout { gap: 16px; }
-    .workspace { padding-right: 4px; }
-    .container { padding-top: 16px; }
-    .footer { gap: 6px; padding: 8px 0; }
-    .footer .version, .up-to-date { display: none; }
+    .layout {
+      flex-direction: column;
+      gap: 10px;
+    }
+    .workspace {
+      padding-right: 0;
+    }
+    .container {
+      padding: 6px 2px 18px 2px;
+    }
+    .footer { gap: 6px; padding: 6px 0 0; }
   }
 </style>

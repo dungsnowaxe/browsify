@@ -13,8 +13,8 @@ navigation remains available. This does not create or resize a native window:
 Browsify keeps the on-demand browser UI from ADR 0002.
 
 The Browsify logo opens Home. The compact labeled rail links to Rules, Test URL,
-Activity, Settings and About; Home does not duplicate these navigation links.
-Rules and Settings share `Select.svelte` for single-choice fields. Compose it with native `<option>` or `<optgroup>` children and an associated label. Settings owns app behavior toggles.
+Activity, Preferences and About; Home does not duplicate these navigation links.
+Rules, Preferences and Import share `BrowserTargetPicker.svelte` (backed by `Select.svelte`) for Browser Targets, Profile Selectors, Unavailable Destination warnings, and Dia/Zen boundary disclosures. Preferences separates immediate macOS integration (`Default link handler`, `Open at Login`) from Primary Config behavior toggles.
 
 ## Boundaries
 
@@ -43,9 +43,11 @@ Tabs in the same browser profile share unsaved edits. Save changes activates
 the configuration after conflict resolution. Reset to defaults clears explicit
 preferences from the draft while preserving Handler Rules.
 
-Automatic updates mean release checks only, never automatic installation. The
-manual check action appears only with automatic checks off, bypasses the daily
-cache, and reports network failures rather than claiming the app is up to date.
+Automatic updates check daily and download signed releases in the background;
+installation strictly requires explicit **Restart to Update** approval, with
+support for **Skipped Release** and 24-hour **Deferred Update**. Manual checks
+are always available even with automatic updates off, bypass the daily cache,
+and report network failures rather than claiming the app is up to date.
 Configuration paths and runtime details are not displayed in the interface.
 
 Run `npm run check`, `npm run test` (Node 24.22.1), and `npm run build` from

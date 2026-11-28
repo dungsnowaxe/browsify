@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { align, initial, merge } from "../src/lib/configMerge.ts";
+import { align, alignAsync, initial, merge, mergeAsync } from "../src/lib/configMerge.ts";
 
 const group = (rows) =>
   initial({
@@ -52,7 +52,7 @@ test("overlapping browser edits present the rule, field and three competing valu
     return values[2];
   });
   assert.deepEqual(fields, [
-    ["work/* · browser", "Safari", "Firefox", "Chrome"],
+    ["work/* · Browser Target", "Safari", "Firefox", "Chrome"],
   ]);
   assert.equal(result.rows[0].rule.browser, "Firefox");
 });
@@ -75,5 +75,42 @@ test("ambiguous duplicate handlers require an explicit match", () => {
   assert.deepEqual(
     rows.map((r) => r.key),
     ["1", "0"],
+  );
+});
+
+test("async conflict resolution surfaces human-readable setting labels and resolves asynchronously", async () => {
+  const base = group([["work/*", "Safari"]]);
+  base.settings = { defaultBrowser: "Safari", options: { checkForUpdates: true } };
+  const local = structuredClone(base);
+  const remote = structuredClone(base);
+  local.settings.options.checkForUpdates = false;
+  remote.settings.defaultBrowser = "Firefox";
+  remote.settings.options.checkForUpdates = true;
+  local.settings.defaultBrowser = "Chrome";
+
+  const seenFields = [];
+  const merged = await mergeAsync(base, local, remote, async (field, _b, mine) => {
+    seenFields.push(field);
+    return mine;
+  });
+
+  assert.deepEqual(seenFields, ["Default Browser Target"]);
+  assert.equal(merged.settings.defaultBrowser, "Chrome");
+  assert.equal(merged.settings.options.checkForUpdates, false);
+
+  const aligned = await alignAsync(
+    [
+      { key: "0", fingerprint: "a", rule: { match: ["work/*"], browser: "Safari", profile: "" } },
+      { key: "1", fingerprint: "a", rule: { match: ["work/*"], browser: "Safari", profile: "" } },
+    ],
+    [
+      { key: "0", fingerprint: "a", rule: { match: ["work/*"], browser: "Safari", profile: "" } },
+      { key: "1", fingerprint: "b", rule: { match: ["work/*"], browser: "Chrome", profile: "" } },
+    ],
+    async (_row, candidates) => candidates[0].key,
+  );
+  assert.deepEqual(
+    aligned.map((r) => r.key),
+    ["0", "1"],
   );
 });

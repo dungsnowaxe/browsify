@@ -1,18 +1,61 @@
 import { get, writable } from "svelte/store";
 import type { EditorGroup } from "../types";
 import {
-  align,
+  alignAsync,
+  countMergeConflicts,
   equal,
   initial,
-  merge,
-  type Choose,
+  mergeAsync,
+  type AsyncChoose,
   type Draft,
+  type DraftRow,
   type Values,
 } from "./configMerge";
+import {
+  askConflict,
+  askDiscard,
+  askIdentify,
+  resetConflictSteps,
+  setConflictTotal,
+} from "./draftDialog";
+import { toast } from "./toast";
 
 export const draft = writable<Draft | null>(null);
 export const draftError = writable("");
+export const draftLoading = writable(true);
 export const saving = writable(false);
+export const validationRequested = writable(0);
+
+export type PendingRuleFocus =
+  | { kind: "invalid" }
+  | { kind: "index"; index: number };
+
+export const pendingRuleFocus = writable<PendingRuleFocus | null>(null);
+
+export function requestFocusInvalidRule() {
+  validationRequested.update((n) => n + 1);
+  pendingRuleFocus.set({ kind: "invalid" });
+}
+
+export function requestFocusRuleIndex(index: number) {
+  pendingRuleFocus.set({ kind: "index", index });
+}
+
+export function consumePendingRuleFocus() {
+  pendingRuleFocus.set(null);
+}
+
+export function countInvalidRules(rows: DraftRow[]): number {
+  let invalid = 0;
+  for (const row of rows) {
+    if (!row.rule) continue;
+    const missingBrowser = !row.rule.browser.trim();
+    const missingPattern = row.rule.match.every((p) => !p.trim());
+    if (missingBrowser || missingPattern) invalid++;
+  }
+  return invalid;
+}
+
 const session = window.__BROWSIFY_SESSION__ ?? location.origin;
 const key = "browsify.config-draft." + session;
 const members = key + ".tab.";
@@ -29,62 +72,115 @@ let disk: Draft | null = null;
 let pending = 0;
 let unpublished: { before: Draft; local: Draft } | null = null;
 let queue = Promise.resolve();
-const display = (v: unknown) =>
-  v === undefined
-    ? "(removed)"
-    : typeof v === "string"
-      ? v
-      : JSON.stringify(v, null, 2);
-const choose: Choose = (field, base, mine, current) => {
-  const answer = window.prompt(
-    `Conflict in ${field}\n\nOriginal: ${display(base)}\nDraft: ${display(mine)}\nCurrent: ${display(current)}\n\nEnter “draft” or “current”. Cancel keeps your edits for later.`,
-  );
-  if (answer?.trim().toLowerCase() === "draft") return mine;
-  if (answer?.trim().toLowerCase() === "current") return current;
-  throw new Error("Conflict unresolved. Your draft is still open.");
-};
-const chooseBetweenTabs: Choose = (field, original, mine, other) =>
-  window.confirm(
-    `Two tabs changed ${field}.\n\nOriginal: ${display(original)}\nThis tab: ${display(mine)}\nOther tab: ${display(other)}\n\nOK keeps this tab’s value. Cancel keeps the other tab’s value.`,
-  )
-    ? mine
-    : other;
 
-function identify(row: Values["rows"][number], candidates: Values["rows"]) {
-  const describe = (r: Values["rows"][number]) =>
-    r.rule
-      ? `${r.rule.match.join(", ")} → ${r.rule.browser}${r.rule.profile ? " (" + r.rule.profile + ")" : ""}`
-      : r.description || "Advanced rule";
-  const lines = candidates.map(
-    (r, i) => `${i + 1}. Original handler ${Number(r.key) + 1}: ${describe(r)}`,
-  );
-  const pick = window.prompt(
-    `The file now contains “${describe(row)}”. Which original rule does it correspond to?\n${lines.join("\n")}\n0. A newly added rule`,
-  );
-  if (pick === null || !/^\d+$/.test(pick) || Number(pick) > candidates.length)
-    throw new Error("Rule identity unresolved. Your draft is still open.");
-  return Number(pick) === 0 ? null : candidates[Number(pick) - 1].key;
+function describeRow(row: DraftRow): string {
+  if (!row.rule) return row.description || "Advanced Handler Rule";
+  const target =
+    row.rule.browser === "none"
+      ? "Don’t open"
+      : `${row.rule.browser || "No browser"}${row.rule.profile ? ` (${row.rule.profile})` : ""}`;
+  return `${row.rule.match.filter(Boolean).join(", ") || "No pattern"} → ${target}`;
 }
+
+function formatValue(value: unknown): string {
+  if (value === undefined) return "Removed";
+  if (value === null || value === "") return "Not set";
+  if (typeof value === "boolean") return value ? "On" : "Off";
+  if (typeof value === "string") return value === "none" ? "Don’t open" : value;
+  if (Array.isArray(value)) {
+    if (!value.length) return "None";
+    if (value.every((entry) => typeof entry === "string")) {
+      return value.join(", ");
+    }
+    if (value.every((entry) => Array.isArray(entry))) {
+      return value
+        .map((entry, idx) => `${idx + 1}. ${String(entry[1] || "Handler Rule")}`)
+        .join("\n");
+    }
+  }
+  if (typeof value === "object" && "key" in (value as Record<string, unknown>)) {
+    return describeRow(value as DraftRow);
+  }
+  return String(value);
+}
+
+const chooseDisk: AsyncChoose = async (field, base, mine, current) => {
+  const decision = await askConflict({
+    scope: "disk",
+    field,
+    base: formatValue(base),
+    mine: formatValue(mine),
+    theirs: formatValue(current),
+    mineLabel: "Your draft",
+    theirsLabel: "Primary Config",
+  });
+  if (decision === "mine") return mine;
+  if (decision === "theirs") return current;
+  throw new Error("Conflict left unresolved. Your unsaved draft is still open.");
+};
+
+const chooseBetweenTabs: AsyncChoose = async (field, original, mine, other) => {
+  const decision = await askConflict({
+    scope: "tab",
+    field,
+    base: formatValue(original),
+    mine: formatValue(mine),
+    theirs: formatValue(other),
+    mineLabel: "This tab",
+    theirsLabel: "Other tab",
+  });
+  if (decision === "mine") return mine;
+  if (decision === "theirs") return other;
+  throw new Error("Tab conflict left unresolved. Your edits in this tab are still open.");
+};
+
+async function identify(
+  row: Values["rows"][number],
+  candidates: Values["rows"],
+): Promise<string | null> {
+  const pick = await askIdentify({
+    rowSummary: describeRow(row),
+    candidates: candidates.map((r) => ({
+      key: r.key,
+      number: Number(r.key) + 1,
+      summary: describeRow(r),
+    })),
+  });
+  if (pick === null) {
+    throw new Error("Rule match left unresolved. Your unsaved draft is still open.");
+  }
+  return pick === "new" ? null : pick;
+}
+
+function getToken(): string {
+  if (window.__BROWSIFY_TOKEN__) return window.__BROWSIFY_TOKEN__;
+  const params = new URLSearchParams(window.location.search);
+  return params.get("token") ?? "";
+}
+
 export async function rpc(type: string, extra: Record<string, unknown> = {}) {
-  const token = window.__BROWSIFY_TOKEN__ ?? "";
-  const response = await fetch("/api/rpc", {
+  const token = getToken();
+  const response = await fetch(`/api/rpc?token=${encodeURIComponent(token)}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Browsify-Token": token },
     body: JSON.stringify({ type, ...extra }),
   });
-  if (!response.ok) throw new Error("Could not reach Browsify.");
+  if (!response.ok) throw new Error("Could not reach Browsify. Check that the app is running and try again.");
   const reply = await response.json();
   if (reply.type?.endsWith("Error")) throw new Error(reply.message.error);
   return reply;
 }
+
 async function latest() {
   const reply = await rpc("getRuleEditor");
   const group: EditorGroup = reply.message.groups[0];
   return initial(group);
 }
+
 function sync() {
   if (!pending && !get(saving)) draft.set(unpublished?.local ?? read() ?? disk);
 }
+
 function publish(value: Draft) {
   if (dirty(value)) localStorage.setItem(key, JSON.stringify(value));
   else {
@@ -94,30 +190,33 @@ function publish(value: Draft) {
   }
   channel.postMessage("changed");
 }
+
 function run(work: () => Promise<void>) {
   queue = queue
     .then(() => navigator.locks.request(key, work))
     .catch((e) => {
-      draftError.set(String(e.message ?? e));
+      const message = e instanceof Error ? e.message : String(e);
+      draftError.set(message.replace(/^Error:\s*/, ""));
     });
   return queue;
 }
-function rebase(from: Draft, onto: Draft) {
+
+async function rebase(from: Draft, onto: Draft): Promise<Values> {
   if (from.base.revision === onto.base.revision) return from.current;
   if (equal(from.original.rows, from.current.rows)) {
-    return merge(
-      { ...from.original, rows: onto.original.rows },
-      { ...from.current, rows: onto.original.rows },
-      onto.original,
-      choose,
-    );
+    const base = { ...from.original, rows: onto.original.rows };
+    const mine = { ...from.current, rows: onto.original.rows };
+    setConflictTotal(countMergeConflicts(base, mine, onto.original));
+    return mergeAsync(base, mine, onto.original, chooseDisk);
   }
-  const current = align(from.original.rows, onto.original.rows, identify);
-  const merged = merge(
+  const current = await alignAsync(from.original.rows, onto.original.rows, identify);
+  const theirs = { rows: current, settings: onto.original.settings };
+  setConflictTotal(countMergeConflicts(from.original, from.current, theirs));
+  const merged = await mergeAsync(
     from.original,
     from.current,
-    { rows: current, settings: onto.original.settings },
-    choose,
+    theirs,
+    chooseDisk,
   );
   const indexes = new Map(
     current.map((r, i) => [r.key, onto.original.rows[i].key]),
@@ -130,17 +229,30 @@ function rebase(from: Draft, onto: Draft) {
     })),
   };
 }
-function combineEdits(before: Draft, local: Draft, shared: Draft): Draft {
+
+async function combineEdits(
+  before: Draft,
+  local: Draft,
+  shared: Draft,
+): Promise<Draft> {
+  const baseValues = await rebase(before, shared);
+  const localValues = await rebase(local, shared);
+  setConflictTotal(countMergeConflicts(baseValues, localValues, shared.current));
   return {
     ...shared,
-    current: merge(
-      rebase(before, shared),
-      rebase(local, shared),
+    current: await mergeAsync(
+      baseValues,
+      localValues,
       shared.current,
       chooseBetweenTabs,
     ),
   };
 }
+
+export function clearDraftError() {
+  draftError.set("");
+}
+
 export function edit(change: (value: Values) => void) {
   const before = get(draft);
   if (!before || get(saving)) return;
@@ -151,6 +263,7 @@ export function edit(change: (value: Values) => void) {
   draft.set(local);
   pending++;
   void run(async () => {
+    resetConflictSteps();
     try {
       const stored = read();
       // A sibling may have saved and cleared storage before its broadcast arrived.
@@ -159,7 +272,7 @@ export function edit(change: (value: Values) => void) {
         disk = await latest();
       const shared = stored ?? disk ?? before;
       const original = unpublished?.before ?? before;
-      publish(combineEdits(original, local, shared));
+      publish(await combineEdits(original, local, shared));
       unpublished = null;
       draftError.set("");
     } catch (e) {
@@ -173,25 +286,41 @@ export function edit(change: (value: Values) => void) {
     sync();
   });
 }
+
 export function refresh() {
+  draftLoading.set(true);
   return run(async () => {
-    disk = await latest();
-    sync();
+    try {
+      disk = await latest();
+      draftError.set("");
+      sync();
+    } finally {
+      draftLoading.set(false);
+    }
   });
 }
-export function save() {
-  if (get(saving)) return;
+
+export function save(): Promise<boolean> {
+  if (get(saving)) return Promise.resolve(false);
+  const currentDraft = get(draft);
+  if (currentDraft && countInvalidRules(currentDraft.current.rows) > 0) {
+    validationRequested.update((n) => n + 1);
+    draftError.set("Complete every Handler Rule’s Browser Target and URL pattern before saving.");
+    return Promise.resolve(false);
+  }
   saving.set(true);
-  void run(async () => {
+  let ok = false;
+  return run(async () => {
+    resetConflictSteps();
     try {
       const current = await latest();
       let shared = read() ?? current;
       if (unpublished) {
-        shared = combineEdits(unpublished.before, unpublished.local, shared);
+        shared = await combineEdits(unpublished.before, unpublished.local, shared);
         publish(shared);
         unpublished = null;
       }
-      const merged = rebase(shared, current);
+      const merged = await rebase(shared, current);
       const rows = equal(merged.rows, current.original.rows)
         ? undefined
         : merged.rows
@@ -210,28 +339,36 @@ export function save() {
       disk = initial(reply.message.groups[0]);
       publish(disk);
       draftError.set("");
+      toast.success("Configuration saved and reloaded");
+      ok = true;
     } finally {
       saving.set(false);
       sync();
     }
-  });
+  }).then(() => ok);
 }
+
 export function discard() {
-  if (!window.confirm("Discard the shared draft in all Browsify tabs?")) return;
-  void run(async () => {
-    unpublished = null;
-    localStorage.removeItem(key);
-    channel.postMessage("changed");
-    sync();
-    disk = await latest();
-    draftError.set("");
-    sync();
+  void askDiscard(otherTabs()).then((confirmed) => {
+    if (!confirmed) return;
+    void run(async () => {
+      unpublished = null;
+      localStorage.removeItem(key);
+      channel.postMessage("changed");
+      sync();
+      disk = await latest();
+      draftError.set("");
+      sync();
+      toast.info("Unsaved changes discarded");
+    });
   });
 }
+
 async function changed() {
   if (localStorage.getItem(key)) sync();
   else await refresh();
 }
+
 export function startDraft() {
   // The browser releases a tab's lock even after a crash. Prune stale markers
   // on entry and focus so a dead tab cannot suppress the last-tab warning.
@@ -261,7 +398,8 @@ export function startDraft() {
   void prune();
   window.addEventListener("focus", prune);
   const nav = performance.getEntriesByType("navigation")[0] as
-    PerformanceNavigationTiming | undefined;
+    | PerformanceNavigationTiming
+    | undefined;
   const previous = sessionStorage.getItem(key);
   if (nav?.type === "reload" && previous && !localStorage.getItem(key))
     localStorage.setItem(key, previous);

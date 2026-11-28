@@ -307,6 +307,14 @@ impl Default for NativeRouter {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct ResolvedRoute {
+    pub target: BrowserConfig,
+    pub matched_rule_index: Option<usize>,
+    pub matched_rule_source: &'static str,
+    pub rewritten: bool,
+}
+
 impl NativeRouter {
     pub fn uses_window_title(&self) -> bool {
         self.rewrites.iter().any(|r| r.matcher.uses_window_title())
@@ -494,9 +502,22 @@ impl NativeRouter {
         opener: Option<&OpenerInfo>,
         open_in_background: bool,
     ) -> Result<BrowserConfig, String> {
+        self.resolve_with_trace(raw_url, opener, open_in_background)
+            .map(|r| r.target)
+    }
+
+    /// Resolves `raw_url` and returns attribution describing whether a Handler Rule or
+    /// Default Browser Target matched, plus whether any Rewrite Rule modified the URL.
+    pub fn resolve_with_trace(
+        &self,
+        raw_url: &str,
+        opener: Option<&OpenerInfo>,
+        open_in_background: bool,
+    ) -> Result<ResolvedRoute, String> {
         let decoded = decode_protocol_url(raw_url);
         let mut parsed =
             Url::parse(&decoded).map_err(|e| format!("Invalid URL '{}': {}", decoded, e))?;
+        let original_href = parsed.as_str().to_string();
 
         for rw in &self.rewrites {
             let href = parsed.as_str().to_string();
@@ -506,15 +527,26 @@ impl NativeRouter {
         }
 
         let final_href = parsed.as_str().to_string();
+        let rewritten = final_href != original_href;
 
-        for h in self.handlers.iter().chain(self.fallback_handlers.iter()) {
+        for (idx, h) in self
+            .handlers
+            .iter()
+            .chain(self.fallback_handlers.iter())
+            .enumerate()
+        {
             if h.matcher.matches(&parsed, &final_href, opener) {
                 let mut out = h.target.clone();
                 out.url = final_href;
                 if out.open_in_background.is_none() {
                     out.open_in_background = Some(open_in_background);
                 }
-                return Ok(out);
+                return Ok(ResolvedRoute {
+                    target: out,
+                    matched_rule_index: Some(idx + 1),
+                    matched_rule_source: "handler",
+                    rewritten,
+                });
             }
         }
 
@@ -523,7 +555,12 @@ impl NativeRouter {
         if out.open_in_background.is_none() {
             out.open_in_background = Some(open_in_background);
         }
-        Ok(out)
+        Ok(ResolvedRoute {
+            target: out,
+            matched_rule_index: None,
+            matched_rule_source: "default",
+            rewritten,
+        })
     }
 }
 
