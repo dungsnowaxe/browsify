@@ -213,6 +213,31 @@ repository root:
 The app is built at `apps/cli/build/Browsify.app`. Local builds are not
 Developer ID–signed or notarized either.
 
+### Hot-reload UI development
+
+To preview and edit `apps/ui` with Vite HMR against a live Browsify backend
+(including your already-installed production `Browsify.app`), open Preferences
+from Browsify's menu bar to get the loopback URL with `?token=…`, then attach
+the dev server:
+
+```sh
+BROWSIFY_UI_URL="http://127.0.0.1:<port>/?token=<token>" npm --prefix apps/ui run dev
+```
+
+You can also start `npm --prefix apps/ui run dev` (or `./scripts/dev-ui.sh --attach`)
+and paste or switch the URL at runtime in the dev-only bar docked above the app
+frame. To spin up an isolated local backend automatically when production
+Browsify isn't running:
+
+```sh
+./scripts/dev-ui.sh --config /tmp/test-config.toml
+./scripts/dev-ui.sh --no-config
+```
+
+The dev proxy keeps the session token in Vite server memory only, scopes
+Config Drafts per backend session, and is stripped completely from
+`npm run build`.
+
 Run checks:
 
 ```sh
