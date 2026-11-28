@@ -31,6 +31,13 @@
   import { equal } from "./lib/configMerge";
 
   let manualRetrying = false;
+  let DevTargetBarComponent: typeof import("./components/DevTargetBar.svelte").default | null = null;
+
+  if (import.meta.env.DEV) {
+    void import("./components/DevTargetBar.svelte").then((mod) => {
+      DevTargetBarComponent = mod.default;
+    });
+  }
 
   onMount(() => {
     const stopDraft = startDraft();
@@ -290,6 +297,14 @@
 </script>
 
 <a class="skip-link" href="#main-content">Skip to content</a>
+{#if import.meta.env.DEV && DevTargetBarComponent}
+  <svelte:component
+    this={DevTargetBarComponent}
+    {connectionStatus}
+    configPath={config.configPath}
+    dirty={!!dirty}
+  />
+{/if}
 <div class="app-shell">
   <Router>
     <div
