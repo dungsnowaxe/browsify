@@ -10,6 +10,10 @@
   margin: 0;
 }
 
+dialog {
+  margin: auto;
+}
+
 /* 3. Enable keyword animations */
 @media (prefers-reduced-motion: no-preference) {
   html {

@@ -5,11 +5,15 @@
     checked = $bindable(false),
     disabled = false,
     label,
+    labelledBy,
+    describedBy,
     onchange,
   }: {
     checked?: boolean;
     disabled?: boolean;
     label: string;
+    labelledBy?: string;
+    describedBy?: string;
     onchange?: () => void;
   } = $props();
 
@@ -24,7 +28,9 @@
   type="button"
   role="switch"
   aria-checked={checked}
-  aria-label={label}
+  aria-label={labelledBy ? undefined : label}
+  aria-labelledby={labelledBy}
+  aria-describedby={describedBy}
   {disabled}
   class="switch-target"
   onclick={toggle}

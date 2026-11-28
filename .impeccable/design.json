@@ -1,0 +1,306 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-28T17:05:00+07:00",
+  "title": "Design System: Browsify",
+  "extensions": {
+    "colorMeta": {
+      "terracotta-accent": {
+        "role": "primary",
+        "displayName": "Terracotta Accent",
+        "canonical": "#c5492e",
+        "tonalRamp": ["#3b1209", "#5c1e11", "#822c19", "#a63a23", "#c5492e", "#dc6b51", "#ef9b87", "#fae0d9"]
+      },
+      "terracotta-ink": {
+        "role": "primary",
+        "displayName": "Terracotta Ink",
+        "canonical": "#b94027",
+        "tonalRamp": ["#361008", "#551b0e", "#782816", "#9a341e", "#b94027", "#d36249", "#ea9581", "#f9ddd6"]
+      },
+      "on-accent": {
+        "role": "neutral",
+        "displayName": "On Accent",
+        "canonical": "#ffffff",
+        "tonalRamp": ["#242422", "#474744", "#6b6b67", "#8f8f8a", "#b3b3ae", "#d6d6d2", "#ecece9", "#ffffff"]
+      },
+      "warm-desk": {
+        "role": "neutral",
+        "displayName": "Warm Desk",
+        "canonical": "#d3d4d0",
+        "tonalRamp": ["#22231f", "#3c3d38", "#585a53", "#777971", "#989a93", "#b8bab4", "#d3d4d0", "#eff0ed"]
+      },
+      "warm-canvas": {
+        "role": "neutral",
+        "displayName": "Warm Canvas",
+        "canonical": "#f5f5f3",
+        "tonalRamp": ["#252622", "#41423d", "#60625b", "#82847d", "#a6a8a1", "#cbcdc7", "#e6e7e3", "#f5f5f3"]
+      },
+      "stone-surface": {
+        "role": "neutral",
+        "displayName": "Stone Surface",
+        "canonical": "#eaeae7",
+        "tonalRamp": ["#262723", "#42433e", "#61625c", "#83857e", "#a7a8a2", "#cbccc7", "#e0e0dc", "#eaeae7"]
+      },
+      "porcelain-panel": {
+        "role": "neutral",
+        "displayName": "Porcelain Panel",
+        "canonical": "#fbfbfa",
+        "tonalRamp": ["#272824", "#444540", "#64655f", "#878882", "#acada7", "#d2d3ce", "#ecece9", "#fbfbfa"]
+      },
+      "crisp-control": {
+        "role": "neutral",
+        "displayName": "Crisp Control",
+        "canonical": "#ffffff",
+        "tonalRamp": ["#282925", "#464742", "#676862", "#8a8b85", "#afb0aa", "#d4d5d0", "#eeeeeb", "#ffffff"]
+      },
+      "warm-inset": {
+        "role": "neutral",
+        "displayName": "Warm Inset",
+        "canonical": "#e9e9e5",
+        "tonalRamp": ["#262722", "#42433d", "#61625a", "#82847b", "#a6a79f", "#cacbc4", "#e0e0db", "#e9e9e5"]
+      },
+      "charcoal-ink": {
+        "role": "neutral",
+        "displayName": "Charcoal Ink",
+        "canonical": "#252624",
+        "tonalRamp": ["#161715", "#252624", "#3d3f3b", "#5c5e59", "#7e807a", "#a5a7a1", "#cfd1cc", "#f1f2ef"]
+      },
+      "slate-muted": {
+        "role": "neutral",
+        "displayName": "Slate Muted",
+        "canonical": "#62645f",
+        "tonalRamp": ["#1f201e", "#363834", "#4d4f4b", "#62645f", "#80827c", "#a3a59f", "#cbcdc7", "#eef0ec"]
+      },
+      "control-stroke": {
+        "role": "neutral",
+        "displayName": "Control Stroke",
+        "canonical": "#80827a",
+        "tonalRamp": ["#232420", "#3b3c37", "#565851", "#70726a", "#80827a", "#a3a59d", "#c8cac3", "#eceee8"]
+      },
+      "graphite-rail": {
+        "role": "neutral",
+        "displayName": "Graphite Rail",
+        "canonical": "#454642",
+        "tonalRamp": ["#171815", "#282925", "#383935", "#454642", "#63655f", "#888a84", "#b5b7b1", "#e5e6e2"]
+      },
+      "rail-paper": {
+        "role": "neutral",
+        "displayName": "Rail Paper",
+        "canonical": "#f0f0ec",
+        "tonalRamp": ["#252622", "#41423c", "#60625a", "#82847b", "#a7a8a0", "#cdcec7", "#e3e4de", "#f0f0ec"]
+      },
+      "switch-track": {
+        "role": "neutral",
+        "displayName": "Switch Track",
+        "canonical": "#767872",
+        "tonalRamp": ["#21221f", "#383a36", "#51534e", "#696b65", "#767872", "#9a9c96", "#c3c5bf", "#eaebe7"]
+      },
+      "danger-crimson": {
+        "role": "semantic",
+        "displayName": "Danger Crimson",
+        "canonical": "#b83238",
+        "tonalRamp": ["#380d10", "#59161a", "#7e2025", "#9d292e", "#b83238", "#d45a60", "#eb9397", "#fadce0"]
+      },
+      "amber-warning": {
+        "role": "semantic",
+        "displayName": "Amber Warning",
+        "canonical": "#875b06",
+        "tonalRamp": ["#2e1d02", "#4c3203", "#6b4705", "#875b06", "#ad7818", "#cfa042", "#e8c882", "#f9edd0"]
+      },
+      "moss-success": {
+        "role": "semantic",
+        "displayName": "Moss Success",
+        "canonical": "#32704b",
+        "tonalRamp": ["#0f2618", "#1a3f29", "#25593a", "#32704b", "#4e8d67", "#76af8c", "#a8d1b7", "#dfefe5"]
+      },
+      "obsidian-canvas": {
+        "role": "neutral",
+        "displayName": "Obsidian Canvas",
+        "canonical": "#252622",
+        "tonalRamp": ["#131411", "#1d1e1a", "#252622", "#3a3c36", "#585a52", "#7d7f76", "#adafa6", "#e4e5df"]
+      },
+      "dark-surface": {
+        "role": "neutral",
+        "displayName": "Dark Surface",
+        "canonical": "#30312c",
+        "tonalRamp": ["#161714", "#232420", "#30312c", "#474842", "#666860", "#8b8d84", "#b7b9b1", "#e8e9e4"]
+      },
+      "dark-panel": {
+        "role": "neutral",
+        "displayName": "Dark Panel",
+        "canonical": "#34352f",
+        "tonalRamp": ["#171815", "#262722", "#34352f", "#4c4d45", "#6b6d63", "#909288", "#bbbdb4", "#eaeaE4"]
+      },
+      "coral-accent": {
+        "role": "primary",
+        "displayName": "Coral Accent (Dark)",
+        "canonical": "#f28a6b",
+        "tonalRamp": ["#3b160d", "#5f2618", "#873824", "#b34d33", "#da6b4e", "#f28a6b", "#f8b39d", "#fde3da"]
+      },
+      "coral-ink": {
+        "role": "primary",
+        "displayName": "Coral Ink (Dark)",
+        "canonical": "#ff9c7f",
+        "tonalRamp": ["#3c170d", "#632818", "#8d3c26", "#ba5438", "#e37556", "#ff9c7f", "#ffc0ad", "#ffe5dd"]
+      },
+      "dark-on-accent": {
+        "role": "neutral",
+        "displayName": "Dark On Accent",
+        "canonical": "#301c15",
+        "tonalRamp": ["#1a0e0a", "#301c15", "#4c2e24", "#6c4538", "#8f6253", "#b58879", "#dab8ad", "#f5e6e1"]
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Home hero greeting only." },
+      "headline": { "displayName": "Headline", "purpose": "Top-level page headings inside PageContainer." },
+      "title": { "displayName": "Title", "purpose": "Section group headers and card titles." },
+      "body": { "displayName": "Body", "purpose": "Descriptions, form inputs, and modal copy." },
+      "label": { "displayName": "Label", "purpose": "Buttons, navigation items, field labels, and status text." },
+      "mono": { "displayName": "Mono", "purpose": "URLs, wildcard patterns, CLI commands, and activity logs." }
+    },
+    "shadows": [
+      { "name": "frame", "value": "0 24px 80px rgba(69, 70, 66, 0.18)", "purpose": "Grounds the 1080x760 desktop window frame against the outer desk." },
+      { "name": "panel", "value": "0 6px 18px rgba(37, 38, 36, 0.035), inset 0 1px 0 rgba(255, 255, 255, 0.6)", "purpose": "Subtle elevation for porcelain cards and modal dialogs." },
+      { "name": "control", "value": "0 3px 7px rgba(37, 38, 36, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.5)", "purpose": "Tactile lift for toggle thumbs, URL inputs, and active segmented pills." },
+      { "name": "inset", "value": "inset 0 1px 3px rgba(37, 38, 36, 0.06)", "purpose": "Recessed depth for progress tracks, segmented control troughs, and code wells." },
+      { "name": "footer-divider", "value": "0 -6px 14px -10px rgba(69, 70, 66, 0.25)", "purpose": "Soft upward boundary separating scrolled page content from the fixed footer." }
+    ],
+    "motion": [
+      { "name": "ease-control", "value": "150ms ease", "purpose": "Hover lifts, border shifts, and active press feedback on buttons and inputs." },
+      { "name": "ease-toggle", "value": "160ms ease", "purpose": "Toggle thumb translation, segmented pill selection, and card hover transitions." },
+      { "name": "ease-progress", "value": "240ms ease", "purpose": "Setup completion track scaleX progression." }
+    ],
+    "breakpoints": [
+      { "name": "compact-desktop", "value": "1100px" },
+      { "name": "stacked-grid", "value": "800px" },
+      { "name": "mobile-shell", "value": "700px" },
+      { "name": "narrow-mobile", "value": "500px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Single primary call to action per surface such as Save changes, Add rule, or Retry connection.",
+      "html": "<button type=\"button\" class=\"ds-btn-primary\">Save changes</button>",
+      "css": ".ds-btn-primary { min-height: 44px; padding: 10px 18px; border: 1px solid transparent; border-radius: 999px; background: #c5492e; color: #ffffff; font-family: Figtree, sans-serif; font-size: 14px; font-weight: 500; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: transform 150ms ease, background-color 150ms ease; } .ds-btn-primary:hover { transform: translateY(-1px); background: #b94027; } .ds-btn-primary:active { transform: translateY(1px) scale(0.985); } .ds-btn-primary:focus-visible { outline: 2px solid #b94027; outline-offset: 3px; }"
+    },
+    {
+      "name": "Secondary & Danger Buttons",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Outlined pill buttons for standard actions and reversible destructive actions like Discard changes.",
+      "html": "<div class=\"ds-btn-row\"><button type=\"button\" class=\"ds-btn-secondary\">Edit Primary Config</button><button type=\"button\" class=\"ds-btn-danger\">Discard changes</button></div>",
+      "css": ".ds-btn-row { display: inline-flex; gap: 8px; flex-wrap: wrap; } .ds-btn-secondary, .ds-btn-danger { min-height: 44px; padding: 10px 18px; border-radius: 999px; background: #ffffff; font-family: Figtree, sans-serif; font-size: 14px; font-weight: 500; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: transform 150ms ease, background-color 150ms ease, border-color 150ms ease; } .ds-btn-secondary { border: 1px solid #80827a; color: #252624; } .ds-btn-secondary:hover { background: #e9e9e5; transform: translateY(-1px); } .ds-btn-danger { border: 1px solid #a64d4f; color: #b83238; } .ds-btn-danger:hover { background: #fcf4f4; border-color: #b83238; transform: translateY(-1px); } .ds-btn-secondary:focus-visible, .ds-btn-danger:focus-visible { outline: 2px solid #b94027; outline-offset: 3px; }"
+    },
+    {
+      "name": "URL Input Field",
+      "kind": "input",
+      "refersTo": "input-field",
+      "description": "44px minimum-height text input with high-contrast control stroke and clear focus ring.",
+      "html": "<div class=\"ds-field\"><label class=\"ds-label\" for=\"ds-url-pattern\">URL pattern</label><input id=\"ds-url-pattern\" class=\"ds-input\" type=\"text\" value=\"*github.com/*\" placeholder=\"*example.com/*\" /></div>",
+      "css": ".ds-field { display: grid; gap: 6px; width: 280px; font-family: Figtree, sans-serif; } .ds-label { font-size: 13px; color: #62645f; } .ds-input { width: 100%; min-height: 44px; padding: 10px 14px; background: #ffffff; border: 1px solid #80827a; border-radius: 14px; color: #252624; font-family: Figtree, sans-serif; font-size: 14px; transition: border-color 150ms ease; } .ds-input:hover { border-color: #62645f; } .ds-input:focus-visible { outline: 2px solid #b94027; outline-offset: 2px; }"
+    },
+    {
+      "name": "Toggle Switch",
+      "kind": "custom",
+      "refersTo": "button-primary",
+      "description": "Tactile 44x28px pill switch used for App behavior and macOS Login Item toggles.",
+      "html": "<div class=\"ds-toggle-group\"><button type=\"button\" role=\"switch\" aria-checked=\"true\" aria-label=\"Keep running\" class=\"ds-switch ds-switch-on\"><span class=\"ds-thumb\"></span></button><button type=\"button\" role=\"switch\" aria-checked=\"false\" aria-label=\"Hide menu bar icon\" class=\"ds-switch\"><span class=\"ds-thumb\"></span></button></div>",
+      "css": ".ds-toggle-group { display: inline-flex; gap: 12px; align-items: center; } .ds-switch { width: 44px; height: 28px; padding: 3px; border-radius: 999px; border: 1px solid #62645f; background: #767872; display: inline-flex; align-items: center; cursor: pointer; box-shadow: 0 3px 7px rgba(37,38,36,0.06); transition: background-color 160ms ease, border-color 160ms ease; } .ds-switch-on { background: #c5492e; border-color: transparent; } .ds-thumb { width: 20px; height: 20px; border-radius: 50%; background: #ffffff; box-shadow: 0 2px 5px rgba(37,38,36,0.16); transition: transform 160ms ease; } .ds-switch-on .ds-thumb { transform: translateX(16px); } .ds-switch:focus-visible { outline: 2px solid #b94027; outline-offset: 3px; }"
+    },
+    {
+      "name": "Navigation Rail",
+      "kind": "nav",
+      "refersTo": "nav-rail",
+      "description": "Dark graphite 84px capsule navigation rail with 40px circular active icon disc and terracotta active icon ink.",
+      "html": "<nav class=\"ds-rail\" aria-label=\"Primary\"><a href=\"#home\" class=\"ds-rail-item ds-rail-active\" aria-current=\"page\"><span class=\"ds-rail-icon\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5.5v-6h-5v6H4a1 1 0 0 1-1-1z\"/></svg></span><span>Home</span></a><a href=\"#rules\" class=\"ds-rail-item\"><span class=\"ds-rail-icon\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M4 6h16M4 12h10M4 18h16\"/></svg></span><span>Rules</span></a></nav>",
+      "css": ".ds-rail { width: 84px; padding: 16px 4px; border-radius: 42px; background: linear-gradient(170deg, #666762, #3c3d39); box-shadow: inset 0 1px 0 rgba(255,255,255,0.15); display: flex; flex-direction: column; align-items: center; gap: 4px; font-family: Figtree, sans-serif; } .ds-rail-item { width: 76px; padding: 8px 0; border-radius: 20px; color: #f0f0ec; text-decoration: none; font-size: 12px; font-weight: 400; line-height: 1.15; display: flex; flex-direction: column; align-items: center; gap: 4px; transition: background-color 150ms ease, transform 150ms ease; } .ds-rail-item:hover { background: rgba(25, 26, 23, 0.22); transform: translateY(-1px); } .ds-rail-icon { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; } .ds-rail-active { color: #ffffff; font-weight: 500; } .ds-rail-active .ds-rail-icon { background: #ffffff; color: #b94027; box-shadow: 0 3px 8px rgba(24,25,22,0.12); } .ds-rail-item:focus-visible { outline: 2px solid #ffffff; outline-offset: 2px; }"
+    },
+    {
+      "name": "Porcelain Panel Card",
+      "kind": "card",
+      "refersTo": "panel-card",
+      "description": "Primary surface container for Handler Rules, Preferences sections, and disconnected recovery panels.",
+      "html": "<section class=\"ds-card\"><div class=\"ds-card-head\"><h3 class=\"ds-card-title\">Default Browser Target</h3><span class=\"ds-pill\">Unsaved</span></div><p class=\"ds-card-desc\">Used when no Handler Rule matches a link.</p></section>",
+      "css": ".ds-card { width: 320px; padding: 20px; border-radius: 24px; background: linear-gradient(145deg, rgba(255,255,255,0.45), rgba(255,255,255,0)), #fbfbfa; border: 1px solid rgba(255,255,255,0.85); box-shadow: 0 6px 18px rgba(37,38,36,0.035), inset 0 1px 0 rgba(255,255,255,0.6); font-family: Figtree, sans-serif; display: flex; flex-direction: column; gap: 8px; } .ds-card-head { display: flex; align-items: center; gap: 8px; } .ds-card-title { margin: 0; font-size: 16px; font-weight: 500; letter-spacing: -0.02em; color: #252624; } .ds-card-desc { margin: 0; font-size: 14px; color: #62645f; line-height: 1.5; } .ds-pill { font-size: 12px; font-weight: 500; color: #875b06; padding: 1px 8px; border-radius: 999px; border: 1px solid #a8894c; background: #e9e9e5; }"
+    },
+    {
+      "name": "Segmented Appearance Control",
+      "kind": "chip",
+      "refersTo": "nav-item-active",
+      "description": "Three-option segmented pill for System, Light, and Dark appearance selection inside Preferences.",
+      "html": "<div class=\"ds-seg\" role=\"radiogroup\" aria-label=\"Appearance\"><button type=\"button\" role=\"radio\" aria-checked=\"true\" class=\"ds-seg-opt ds-seg-active\">System</button><button type=\"button\" role=\"radio\" aria-checked=\"false\" class=\"ds-seg-opt\">Light</button><button type=\"button\" role=\"radio\" aria-checked=\"false\" class=\"ds-seg-opt\">Dark</button></div>",
+      "css": ".ds-seg { display: inline-flex; gap: 2px; padding: 3px; border-radius: 999px; background: #e9e9e5; border: 1px solid rgba(37,38,36,0.14); box-shadow: inset 0 1px 3px rgba(37,38,36,0.06); font-family: Figtree, sans-serif; } .ds-seg-opt { min-height: 44px; padding: 0 12px; border-radius: 999px; border: 1px solid transparent; background: transparent; color: #62645f; font-size: 13px; font-weight: 500; cursor: pointer; transition: background-color 160ms ease, color 160ms ease; } .ds-seg-opt:hover { color: #252624; } .ds-seg-active { background: #ffffff; border-color: #80827a; color: #252624; box-shadow: 0 3px 7px rgba(37,38,36,0.06); } .ds-seg-opt:focus-visible { outline: 2px solid #b94027; outline-offset: 2px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Precision Desk Instrument",
+    "overview": "Browsify is a local-first macOS desktop utility presented as a calm, tactile desk instrument rather than a sprawling SaaS dashboard. Every screen sits inside a grounded, warm-stone window frame anchored by a dark graphite navigation rail on the left and clean porcelain work panels on the right. The interface favors immediate legibility, direct manipulation, and predictable macOS conventions—giving technical and everyday Mac users confidence that clicking any link opens the exact browser and profile they expect.\n\nThe aesthetic rejects generic neon-purple AI gradients, decorative glass blur, uppercase eyebrow kickers, and marketing chrome. Color stays quiet until it carries operational meaning: warm stone neutrals absorb visual noise, terracotta marks the single primary action or active route, and semantic tones (crimson, amber, moss) appear strictly for errors, unsaved drafts, and verified readiness. Both Light and Dark themes preserve this material contrast, shifting from sunlit warm paper to low-glare olive-charcoal without altering layout geometry or hierarchy.",
+    "keyCharacteristics": [
+      "Warm stone and porcelain surfaces paired with a single dark graphite navigation rail for instant spatial orientation.",
+      "One terracotta accent voice reserved for primary calls to action, active toggles, and active navigation focus.",
+      "Concentric rounded geometry stepping down cleanly from the outer desktop frame (`38px`) to cards (`24px`), inputs (`14px`), and tactile pill buttons (`999px`).",
+      "Accessible, unhurried interaction geometry: every interactive button, toggle target, select, and link meets a `44px` minimum hit height with unmistakable focus rings.",
+      "Local-first transparency: explicit connection status, staged Config Draft save/discard footers, and dry-run URL testing that never opens a browser by surprise."
+    ],
+    "rules": [
+      {
+        "name": "The One Accent Voice Rule",
+        "body": "Terracotta (`#c5492e` / `#f28a6b`) is used strictly for the single primary action, active route, or enabled toggle—never for decorative gradients, card fills, or secondary icons.",
+        "section": "colors"
+      },
+      {
+        "name": "The Interactive Stroke Rule",
+        "body": "Every interactive input, select, secondary button, and segmented thumb uses `Control Stroke` (`#80827a` / `#8e9085`) to guarantee ≥ 3:1 non-text contrast; disabled controls step down to `--browsify-border-strong` so unavailable controls visibly recede without collapsing contrast on labels.",
+        "section": "colors"
+      },
+      {
+        "name": "The Neutral Stone Rule",
+        "body": "Never introduce cold pure-gray (`#808080`) or pure-black (`#000000`) surfaces; all neutral surfaces carry Browsify's subtle warm-olive undertone (`#252624` through `#fbfbfa`).",
+        "section": "colors"
+      },
+      {
+        "name": "The Zero-Eyebrow Rule",
+        "body": "Never place tiny uppercase kicker/eyebrow labels above headings; lead directly with the clear sentence-case heading and a concise subtitle when needed.",
+        "section": "typography"
+      },
+      {
+        "name": "The Tabular Metric Rule",
+        "body": "All counts, rule numbers, log timestamps, and version numbers apply `font-variant-numeric: tabular-nums` so numbers align cleanly and never jitter when live data updates.",
+        "section": "typography"
+      },
+      {
+        "name": "The Tracking Floor Rule",
+        "body": "Tightened display tracking never goes below `-0.035em` (and never below `-0.04em` anywhere), preserving letter separation in `Sora` across macOS Retina and standard displays.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat-Inside-Cards Rule",
+        "body": "Never nest bordered, shadowed cards inside another `.glass-panel` card; subdivide content inside a panel using `1px` hairline dividers (`--browsify-border-strong`) or subtle flat inset fills.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Calm Motion Rule",
+        "body": "Interactive lifts stay restrained (`translateY(-1px)` on fine-pointer hover, `translateY(1px) scale(0.985)` on active press, `140ms`–`160ms ease`), and every transform and transition collapses cleanly under `prefers-reduced-motion: reduce`.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do preserve the pinned `1080px × 760px` desktop `.app-frame` dimensions and `84px` graphite capsule navigation rail so Browsify keeps its focused desktop-instrument proportions.",
+      "Do use `Control Stroke` (`#80827a` light / `#8e9085` dark) on every interactive border and `Terracotta Ink` (`#b94027` light / `#ff9c7f` dark) for links, active rail labels, and `2px` focus rings.",
+      "Do keep `44px` minimum height on every button, input, select, link action, and interactive list item, and preserve `prefers-reduced-motion` parity.",
+      "Do use canonical Browsify domain terms (`Primary Config`, `Config Draft`, `Handler Rule`, `Rewrite Rule`, `Browser Target`, `Opener`, `Unavailable Destination`) across all labels and feedback copy.",
+      "Do group immediate macOS/window controls (`This Mac & app`) separately from draft-staged `Primary Config` controls so users always know whether `Save changes` is required.",
+      "Do render a single calm disconnected `.glass-panel` with reopen steps (`Applications`, `Spotlight`, or `browsify ui`) and one primary `Retry connection` button on offline subpages."
+    ],
+    "donts": [
+      "Don't add tiny uppercase eyebrow/kicker labels above page or section headings.",
+      "Don't nest bordered or shadowed cards inside `.glass-panel` containers; use `1px` dividers (`--browsify-border-strong`) instead.",
+      "Don't apply `opacity` to a parent label around a disabled `<Toggle>` or `<button>`, which compounds dimming and breaks WCAG AA text contrast.",
+      "Don't use a bottom `mask-image` fade on scrollable containers that slices the last visible line of text on mobile viewports.",
+      "Don't hijack macOS `Option+Arrow` text navigation inside `<input>`, `<select>`, or `<textarea>` fields for keyboard rule reordering.",
+      "Don't introduce secondary brand accents, saturated hero gradients, or marketing copy inside the desktop utility workspace."
+    ]
+  }
+}

@@ -4,13 +4,19 @@
   import Toggle from "./Toggle.svelte";
   import { attrs, ui } from "../design-system/styles";
 
-  const LOCKED_TOOLTIP = "Open Browsify to connect and change this setting.";
+  const uid = $props.id();
+  const labelId = `${uid}-label`;
+  const hintId = `${uid}-hint`;
 
   let {
     label,
     hint,
     checked = $bindable(false),
     locked = false,
+    flat = false,
+    modified = false,
+    hintTone = "default",
+    lockedText = "Open Browsify to connect and change this setting.",
     onLockedClick,
     onchange,
   }: {
@@ -18,6 +24,10 @@
     hint: string;
     checked: boolean;
     locked?: boolean;
+    flat?: boolean;
+    modified?: boolean;
+    hintTone?: "default" | "warning";
+    lockedText?: string;
     onLockedClick?: () => void;
     onchange?: () => void;
   } = $props();
@@ -26,32 +36,44 @@
 {#snippet inner()}
   <span class="option-info">
     <span class="option-text">
-      <span class="option-label">
+      <span id={labelId} class="option-label">
         {label}
-        {#if locked}<span class="lock-inline" aria-hidden="true"><LockIcon /></span>{/if}
+        {#if modified}
+          <span class="modified-pill">Unsaved</span>
+        {/if}
+        {#if locked}
+          <span class="lock-inline" aria-hidden="true"><LockIcon /></span>
+          <span class="sr-only">({checked ? "on" : "off"}, locked)</span>
+        {/if}
       </span>
-      <span class="option-hint">{hint}</span>
+      <span id={hintId} class="option-hint" class:warning={hintTone === "warning"}>{hint}</span>
     </span>
     {#if locked}
       <span class="locked-switch" aria-hidden="true">
         <span {...attrs(ui.switch, checked && ui.checked)}><span {...attrs(ui.thumb, checked && ui.thumbChecked)}></span></span>
       </span>
     {:else}
-      <Toggle {label} bind:checked {onchange} />
+      <Toggle {label} labelledBy={labelId} describedBy={hintId} bind:checked {onchange} />
     {/if}
   </span>
 {/snippet}
 
 {#if locked}
-  <Tooltip text={LOCKED_TOOLTIP} block onclick={onLockedClick}>
-    <span class={`option-row locked ${attrs(ui.inset).class ?? ""}`} style={attrs(ui.inset).style}>
+  <Tooltip text={lockedText} block onclick={onLockedClick ?? (() => {})}>
+    <span
+      class={`option-row locked ${flat ? "flat" : (attrs(ui.inset).class ?? "")}`}
+      style={flat ? undefined : attrs(ui.inset).style}
+    >
       {@render inner()}
     </span>
   </Tooltip>
 {:else}
-  <div class={`option-row ${attrs(ui.inset).class ?? ""}`} style={attrs(ui.inset).style}>
+  <label
+    class={`option-row interactive ${flat ? "flat" : (attrs(ui.inset).class ?? "")}`}
+    style={flat ? undefined : attrs(ui.inset).style}
+  >
     {@render inner()}
-  </div>
+  </label>
 {/if}
 
 <style>
@@ -65,12 +87,28 @@
     transition: background 0.2s ease, transform 0.2s ease;
   }
 
-  .option-row.locked {
-    cursor: help;
-    opacity: 0.92;
+  .option-row.interactive {
+    cursor: pointer;
   }
 
-  .locked-switch { display: flex; align-items: center; width: 44px; height: 44px; flex-shrink: 0; opacity: 0.5; pointer-events: none; }
+  .option-row.flat {
+    padding: 14px 0 0;
+    border-top: 1px solid var(--browsify-border-strong);
+  }
+
+  .option-row.locked {
+    cursor: help;
+  }
+
+  .locked-switch {
+    display: flex;
+    align-items: center;
+    width: 44px;
+    height: 44px;
+    flex-shrink: 0;
+    opacity: 0.5;
+    pointer-events: none;
+  }
 
   .option-info {
     display: flex;
@@ -91,7 +129,18 @@
     font-weight: 500;
     display: inline-flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 6px;
+  }
+
+  .modified-pill {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--log-warning);
+    padding: 0 6px;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, var(--log-warning) 55%, var(--browsify-control-border));
+    background: var(--browsify-panel);
   }
 
   .option-hint {
@@ -99,9 +148,13 @@
     font-size: 13px;
   }
 
+  .option-hint.warning {
+    color: var(--log-warning);
+  }
+
   .lock-inline {
     display: inline-flex;
-    opacity: 0.55;
+    color: var(--text-secondary);
   }
 
   .lock-inline :global(svg) {

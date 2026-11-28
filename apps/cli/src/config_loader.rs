@@ -1,6 +1,6 @@
 use browsify_core::{
     resolve_short_url, BrowserConfig, ConfigOptions, NativeRouter, OpenerInfo, ProfileResolver,
-    TomlConfig,
+    ResolvedRoute, TomlConfig,
 };
 
 use serde::{Deserialize, Serialize};
@@ -180,12 +180,23 @@ impl BrowsifyEngine {
         opener: Option<&OpenerInfo>,
         open_in_background: bool,
     ) -> Result<BrowserConfig, String> {
+        self.resolve_with_trace(url, opener, open_in_background)
+            .map(|r| r.target)
+    }
+
+    pub fn resolve_with_trace(
+        &self,
+        url: &str,
+        opener: Option<&OpenerInfo>,
+        open_in_background: bool,
+    ) -> Result<ResolvedRoute, String> {
         let input_url = if self.summary.options.resolve_short_urls {
             resolve_short_url(url, &[])
         } else {
             url.to_string()
         };
-        self.router.resolve(&input_url, opener, open_in_background)
+        self.router
+            .resolve_with_trace(&input_url, opener, open_in_background)
     }
 }
 
